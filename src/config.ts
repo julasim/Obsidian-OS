@@ -1,0 +1,67 @@
+import "dotenv/config";
+import path from "path";
+
+// ── LLM (Ollama) ─────────────────────────────────────────────────────────────
+export const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1";
+export const DEFAULT_MODEL = process.env.OLLAMA_MODEL || "kimi-k2.5:cloud";
+export const FAST_MODEL = process.env.OLLAMA_FAST_MODEL || DEFAULT_MODEL;
+export const SUBAGENT_MODEL = process.env.OLLAMA_SUBAGENT_MODEL || DEFAULT_MODEL;
+export const VISION_MODEL = process.env.VISION_MODEL || DEFAULT_MODEL;
+
+// ── Whisper (lokal) ──────────────────────────────────────────────────────────
+export const WHISPER_MODEL = process.env.WHISPER_MODEL || "large-v3";
+export const WHISPER_LANG = process.env.WHISPER_LANG || "de";
+
+// ── Agent ────────────────────────────────────────────────────────────────────
+export const MAX_TOOL_ROUNDS = 5;
+export const MAX_SPAWN_DEPTH = 2;
+export const getAgentModel = (_name: string) => DEFAULT_MODEL;
+
+// ── Ged\u00e4chtnis ────────────────────────────────────────────────────────────────
+export const MAX_HISTORY_CHARS = 60_000;
+export const COMPACT_THRESHOLD = 8_000;
+export const KEEP_RECENT_LOGS = 5;
+export const HISTORY_LOAD_LIMIT = 10;
+export const KEPT_TOOL_MESSAGES = 3;
+
+// ── Workspace ────────────────────────────────────────────────────────────────
+export const WORKSPACE_PATH = process.env.WORKSPACE_PATH ?? process.env.VAULT_PATH ?? "";
+export const WORKSPACE_INBOX = "Inbox";
+export const WORKSPACE_AGENTS_DIR = "Agents";
+export const WORKSPACE_LOGS_DIR = "MEMORY_LOGS";
+
+// ── Obsidian ─────────────────────────────────────────────────────────────────
+export const DAILY_NOTES_DIR = process.env.DAILY_NOTES_DIR || "Daily";
+export const TEMPLATES_DIR = process.env.TEMPLATES_DIR || "Templates";
+export const ATTACHMENTS_DIR = process.env.ATTACHMENTS_DIR || "Attachments";
+export const EXTRACT_MAX_CHARS = 50_000;
+
+// ── Sicherheit ───────────────────────────────────────────────────────────────
+export const ALLOWED_CHAT_ID = process.env.ALLOWED_CHAT_ID
+  ? parseInt(process.env.ALLOWED_CHAT_ID, 10)
+  : null;
+
+// ── System ───────────────────────────────────────────────────────────────────
+export const TIMEZONE = "Europe/Vienna";
+export const LOCALE = "de-AT";
+export const LANGUAGE = "Deutsch";
+export const LOG_FILE = path.join(process.cwd(), "logs", "bot.log");
+
+// ── Limits ───────────────────────────────────────────────────────────────────
+export const TYPING_INTERVAL_MS = 4_000;
+export const TOOL_OUTPUT_MAX_CHARS = 8_000;
+export const MESSAGE_PREVIEW_LENGTH = 80;
+export const MAX_FILE_SCAN = 1_000;
+export const SEARCH_MAX_RESULTS = 20;
+export const SEARCH_LINE_MAX = 200;
+export const WS_MAX_FILE_CHARS = 20_000;
+export const WS_MAX_TOTAL_CHARS = 150_000;
+
+// ── Vault-Scan ──────────────────────────────────────────────────────────
+export const SKIP_DIRS = new Set([".obsidian", ".git", ".trash", "node_modules", ".DS_Store"]);
+
+// ── Logging ──────────────────────────────────────────────────────────────────
+export const MAX_LOG_LINES = 500;
+export const LOG_DEFAULT_LINES = 20;
+export const LOG_MAX_DISPLAY_LINES = 50;
+export const LOG_DISPLAY_MAX_CHARS = 3_800;

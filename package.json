@@ -1,0 +1,29 @@
+{
+  "name": "obsidian-os",
+  "version": "1.0.0",
+  "description": "Persönlicher Obsidian-Vault-Assistent via Telegram",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "obsidian-os": "dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "cli": "node dist/cli.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.0",
+    "grammy": "^1.42.0",
+    "mammoth": "^1.9.0",
+    "openai": "^6.33.0",
+    "pdf-parse": "^1.1.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "@types/pdf-parse": "^1.1.4"
+  }
+}
