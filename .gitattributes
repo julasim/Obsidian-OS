@@ -1,0 +1,14 @@
+# Force LF line endings for all text files (critical for Linux deployment)
+* text=auto eol=lf
+
+# Explicitly mark shell scripts
+*.sh text eol=lf
+*.ts text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.ogg binary
+*.pdf binary
