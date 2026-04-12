@@ -86,6 +86,6 @@ export function deleteNote(nameOrPath: string): string | null {
   const filepath = resolveNotePath(nameOrPath);
   if (!filepath) return null;
   const filename = path.basename(filepath);
-  fs.unlinkSync(filepath);
+  try { fs.unlinkSync(filepath); } catch { return null; }
   return filename;
 }

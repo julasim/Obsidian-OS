@@ -28,6 +28,12 @@ import {
   handleLogs,
 } from "./commands/system.js";
 
+function withTyping(ctx: Context): { stop: () => void } {
+  ctx.replyWithChatAction("typing").catch(() => {});
+  const id = setInterval(() => ctx.replyWithChatAction("typing").catch(() => {}), TYPING_INTERVAL_MS);
+  return { stop: () => clearInterval(id) };
+}
+
 async function safeReply(
   ctx: { reply: (text: string, opts?: object) => Promise<unknown> },
   text: string,
@@ -80,16 +86,15 @@ export function createBot(token: string): Bot {
       // Setup wizard
       if (!isMainWorkspaceConfigured() || isSetupActive()) {
         if (!isSetupActive()) activateSetup();
-        const typing = setInterval(() => ctx.replyWithChatAction("typing").catch(() => {}), TYPING_INTERVAL_MS);
-        await ctx.replyWithChatAction("typing");
+        const typing = withTyping(ctx);
         try {
           const antwort = await processSetup(raw);
-          clearInterval(typing);
           await safeReply(ctx, antwort);
         } catch (err) {
-          clearInterval(typing);
           logError("Setup", err);
           await ctx.reply("Fehler beim Setup \u2014 ist Ollama erreichbar?");
+        } finally {
+          typing.stop();
         }
         return;
       }
@@ -97,29 +102,25 @@ export function createBot(token: string): Bot {
       // /btw — direct answer without tools
       const btwMatch = raw.match(/^\/btw\s+(.+)/is);
       if (btwMatch) {
-        const typing = setInterval(() => ctx.replyWithChatAction("typing").catch(() => {}), TYPING_INTERVAL_MS);
-        await ctx.replyWithChatAction("typing");
+        const typing = withTyping(ctx);
         try {
           const antwort = await processBtw(btwMatch[1].trim());
-          clearInterval(typing);
           await safeReply(ctx, antwort);
         } catch {
-          clearInterval(typing);
           await ctx.reply("Fehler bei /btw \u2014 ist Ollama erreichbar?");
+        } finally {
+          typing.stop();
         }
         return;
       }
 
       // Normal message -> agent
-      const typing = setInterval(() => ctx.replyWithChatAction("typing").catch(() => {}), TYPING_INTERVAL_MS);
-      await ctx.replyWithChatAction("typing");
+      const typing = withTyping(ctx);
       try {
         setReplyContext((msg) => safeReply(ctx, msg).then(() => {}));
         const antwort = await processMessage(raw);
-        clearInterval(typing);
         await safeReply(ctx, antwort);
       } catch (err: unknown) {
-        clearInterval(typing);
         logError("LLM", err);
         try {
           const filepath = saveNote(raw);
@@ -128,6 +129,8 @@ export function createBot(token: string): Bot {
         } catch {
           await ctx.reply("Fehler \u2014 ist Ollama erreichbar?");
         }
+      } finally {
+        typing.stop();
       }
     });
   });
@@ -135,17 +138,16 @@ export function createBot(token: string): Bot {
   // File handlers (voice, photo, document)
   registerFileHandlers(bot, async (chatId, text, ctx) => {
     enqueue(chatId, async () => {
-      const typing = setInterval(() => ctx.replyWithChatAction("typing").catch(() => {}), TYPING_INTERVAL_MS);
-      await ctx.replyWithChatAction("typing");
+      const typing = withTyping(ctx);
       try {
         setReplyContext((msg) => safeReply(ctx, msg).then(() => {}));
         const antwort = await processMessage(text);
-        clearInterval(typing);
         await safeReply(ctx, antwort);
       } catch (err) {
-        clearInterval(typing);
         logError("LLM", err);
         await ctx.reply("LLM nicht erreichbar.");
+      } finally {
+        typing.stop();
       }
     });
   });

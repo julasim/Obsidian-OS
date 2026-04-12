@@ -191,7 +191,7 @@ export function registerFileHandlers(
           : String(err);
         await ctx.reply(`🎤 Fehler: ${hint}`);
       }
-    })();
+    })().catch((e) => logError("Voice-unhandled", e));
   });
 
   // Photos → Vision → LLM
@@ -206,7 +206,7 @@ export function registerFileHandlers(
         logError("Photo", err);
         await ctx.reply("Fehler beim Verarbeiten des Fotos.");
       }
-    })();
+    })().catch((e) => logError("Photo-unhandled", e));
   });
 
   // Documents → extractor → LLM
@@ -221,6 +221,6 @@ export function registerFileHandlers(
         logError("Document", err);
         await ctx.reply("Fehler beim Verarbeiten des Dokuments.");
       }
-    })();
+    })().catch((e) => logError("Document-unhandled", e));
   });
 }

@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { WORKSPACE_PATH, WORKSPACE_INBOX, LOCALE } from "../config.js";
+import { WORKSPACE_PATH, WORKSPACE_INBOX, LOCALE, SKIP_DIRS } from "../config.js";
 
 export const workspacePath = WORKSPACE_PATH;
 
@@ -41,6 +41,31 @@ export function safePath(relativePath: string): string | null {
   return resolved;
 }
 
+/** Walk all .md files under root, calling callback for each. Return false from callback to stop. */
+export function walkMarkdownFiles(
+  root: string,
+  callback: (filepath: string) => boolean | void,
+  limit = Infinity,
+): void {
+  let count = 0;
+  function walk(dir: string): void {
+    if (count >= limit) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (count >= limit) return;
+      if (SKIP_DIRS.has(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith(".md")) {
+        count++;
+        if (callback(full) === false) return;
+      }
+    }
+  }
+  walk(root);
+}
+
 export function resolveNotePath(nameOrPath: string): string | null {
   const withExt = nameOrPath.endsWith(".md") ? nameOrPath : nameOrPath + ".md";
 
@@ -51,14 +76,13 @@ export function resolveNotePath(nameOrPath: string): string | null {
     if (fs.existsSync(candidate)) return candidate;
   }
 
-  const SKIP = new Set([".obsidian", ".git", ".trash", "node_modules", ".DS_Store"]);
   function searchDir(dir: string): string | null {
     if (!fs.existsSync(dir)) return null;
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
     catch { return null; }
     for (const entry of entries) {
-      if (SKIP.has(entry.name)) continue;
+      if (SKIP_DIRS.has(entry.name)) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         const found = searchDir(full);

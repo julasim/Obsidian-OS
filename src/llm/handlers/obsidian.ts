@@ -167,6 +167,13 @@ export const obsidianHandlers: HandlerMap = {
 
   notiz_aus_vorlage: async (args) => {
     const vorlageName = String(args.vorlage);
+    const zielpfad = String(args.zielpfad);
+
+    // Block path traversal before it reaches workspace functions
+    if (zielpfad.includes("..") || path.isAbsolute(zielpfad)) {
+      return "Fehler: Ungueltiger Zielpfad (kein .. oder absoluter Pfad erlaubt).";
+    }
+
     const rawTemplate = readTemplate(vorlageName);
     if (!rawTemplate) {
       const available = listTemplates();
@@ -182,7 +189,7 @@ export const obsidianHandlers: HandlerMap = {
       }
     }
 
-    const created = createFromTemplate(vorlageName, String(args.zielpfad), extraVars);
+    const created = createFromTemplate(vorlageName, zielpfad, extraVars);
     if (!created) return `Fehler beim Erstellen aus Vorlage "${vorlageName}".`;
     const relPath = path.relative(WORKSPACE_PATH, created).replace(/\\/g, "/");
     return `Notiz erstellt: ${relPath}`;

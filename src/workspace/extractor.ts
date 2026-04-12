@@ -2,6 +2,12 @@ import fs from "fs";
 import path from "path";
 import { EXTRACT_MAX_CHARS } from "../config.js";
 
+function truncate(text: string): string {
+  return text.length > EXTRACT_MAX_CHARS
+    ? text.slice(0, EXTRACT_MAX_CHARS) + `\n\n[... gekürzt – ${text.length - EXTRACT_MAX_CHARS} Zeichen entfernt]`
+    : text;
+}
+
 export interface ExtractionResult {
   text: string;
   format: "pdf" | "docx" | "text" | "unsupported";
@@ -12,20 +18,14 @@ export async function extractPdf(filePath: string): Promise<string> {
   const pdfParse = (await import("pdf-parse")).default;
   const buffer = fs.readFileSync(filePath);
   const data = await pdfParse(buffer);
-  const text = data.text.trim();
-  return text.length > EXTRACT_MAX_CHARS
-    ? text.slice(0, EXTRACT_MAX_CHARS) + `\n\n[... gekürzt – ${text.length - EXTRACT_MAX_CHARS} Zeichen entfernt]`
-    : text;
+  return truncate(data.text.trim());
 }
 
 /** Extract text from a DOCX/DOC file */
 export async function extractDocx(filePath: string): Promise<string> {
   const mammoth = (await import("mammoth")).default;
   const result = await mammoth.extractRawText({ path: filePath });
-  const text = result.value.trim();
-  return text.length > EXTRACT_MAX_CHARS
-    ? text.slice(0, EXTRACT_MAX_CHARS) + `\n\n[... gekürzt – ${text.length - EXTRACT_MAX_CHARS} Zeichen entfernt]`
-    : text;
+  return truncate(result.value.trim());
 }
 
 /** Dispatch to correct extractor based on MIME type or file extension */
@@ -50,9 +50,7 @@ export async function extractDocument(
   }
 
   if (mime.startsWith("text/") || ext === ".md" || ext === ".txt") {
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const text = raw.length > EXTRACT_MAX_CHARS ? raw.slice(0, EXTRACT_MAX_CHARS) + "\n\n[... gekürzt]" : raw;
-    return { text, format: "text" };
+    return { text: truncate(fs.readFileSync(filePath, "utf-8")), format: "text" };
   }
 
   return { text: "", format: "unsupported" };

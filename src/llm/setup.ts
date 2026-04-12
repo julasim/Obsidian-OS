@@ -49,6 +49,7 @@ export async function processSetup(userMessage: string): Promise<string> {
   }
 
   _messages.push({ role: "user", content: userMessage });
+  if (_messages.length > 20) _messages = [_messages[0], ..._messages.slice(-6)];
 
   const response = await client.chat.completions.create({
     model: getModel(),
@@ -69,9 +70,12 @@ export async function processSetup(userMessage: string): Promise<string> {
       return "Fehler beim Verarbeiten der Setup-Daten. Bitte nochmal versuchen.";
     }
 
-    finalizeMainWorkspace(args);
-    deactivateSetup();
-    _messages = [];
+    try {
+      finalizeMainWorkspace(args);
+    } finally {
+      deactivateSetup();
+      _messages = [];
+    }
 
     return `\u2705 Eingerichtet!\n\n${args.emoji} ${args.name}\n${args.vibe}\n\nHallo ${args.userName}! Schreib einfach los \u2014 ich bin bereit.`;
   }

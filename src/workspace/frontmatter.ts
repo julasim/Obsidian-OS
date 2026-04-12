@@ -1,7 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { workspacePath } from "./helpers.js";
-import { SKIP_DIRS } from "../config.js";
+import { workspacePath, safePath, walkMarkdownFiles } from "./helpers.js";
 
 /** Parse YAML frontmatter block from markdown content */
 export function parseFrontmatter(content: string): { data: Record<string, unknown>; body: string } {
@@ -72,12 +71,8 @@ export function stringifyFrontmatter(data: Record<string, unknown>, body: string
 
 /** Update or add a frontmatter field in a file */
 export function upsertFrontmatterField(filepath: string, key: string, value: unknown): boolean {
-  // Resolve relative to vault if not absolute
-  const absPath = path.isAbsolute(filepath)
-    ? filepath
-    : path.join(workspacePath, filepath);
-
-  if (!fs.existsSync(absPath)) return false;
+  const absPath = safePath(filepath);
+  if (!absPath || !fs.existsSync(absPath)) return false;
   const content = fs.readFileSync(absPath, "utf-8");
   const { data, body } = parseFrontmatter(content);
   data[key] = value;
@@ -116,25 +111,12 @@ export function findByTag(tag: string, subdir?: string): string[] {
   const searchRoot = subdir ? path.join(workspacePath, subdir) : workspacePath;
   const results: string[] = [];
 
-  function walkDir(dir: string): void {
-    if (!fs.existsSync(dir)) return;
-    let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
-    catch { return; }
-    for (const entry of entries) {
-      if (SKIP_DIRS.has(entry.name)) continue;
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walkDir(full);
-      } else if (entry.name.endsWith(".md")) {
-        const tags = getFileTags(full);
-        if (tags.includes(normalizedTag)) {
-          results.push(path.relative(workspacePath, full).replace(/\\/g, "/"));
-        }
-      }
+  walkMarkdownFiles(searchRoot, (full) => {
+    const tags = getFileTags(full);
+    if (tags.includes(normalizedTag)) {
+      results.push(path.relative(workspacePath, full).replace(/\\/g, "/"));
     }
-  }
+  });
 
-  walkDir(searchRoot);
   return results;
 }

@@ -8,9 +8,9 @@ import {
   TIMEZONE,
 } from "../config.js";
 
-// Haupt-Client: Ollama (OpenAI-kompatible API)
-// Spracherkennung läuft lokal via openai/whisper Python-CLI (kein API-Client nötig)
-export const client = new OpenAI({ baseURL: OLLAMA_BASE_URL, apiKey: "ollama" });
+// Haupt-Client: OpenAI-kompatible API (Ollama Cloud, OpenAI, OpenRouter, lokales Ollama)
+const apiKey = process.env.OLLAMA_API_KEY || process.env.OPENAI_API_KEY || "ollama";
+export const client = new OpenAI({ baseURL: OLLAMA_BASE_URL, apiKey });
 
 let MODEL = DEFAULT_MODEL;
 let _fastMode = false;

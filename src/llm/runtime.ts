@@ -46,6 +46,7 @@ export async function processAgent(
   ];
 
   const activeModel = mode === "minimal" ? SUBAGENT_MODEL : getAgentModel(agentName);
+  let totalChars = messages.reduce((s, m) => s + JSON.stringify(m).length, 0);
 
   for (let i = 0; i < MAX_TOOL_ROUNDS; i++) {
     const response = await client.chat.completions.create({
@@ -55,8 +56,13 @@ export async function processAgent(
       tool_choice: "required",
     });
 
-    const reply = response.choices[0].message;
+    const reply = response.choices[0]?.message;
+    if (!reply) {
+      logError(`[${agentName}]`, "API returned empty choices");
+      break;
+    }
     messages.push(reply);
+    totalChars += JSON.stringify(reply).length;
 
     // Fallback: Modell hat keinen Tool-Call gemacht (sollte bei "required" nicht passieren)
     if (!reply.tool_calls || reply.tool_calls.length === 0) {
@@ -109,18 +115,18 @@ export async function processAgent(
     }
 
     messages.push(...toolResults);
+    for (const r of toolResults) totalChars += JSON.stringify(r).length;
 
     // Pruning: keep assistant+tool pairs together (API requirement)
-    const totalChars = messages.reduce((s, m) => s + JSON.stringify(m).length, 0);
     if (totalChars > MAX_HISTORY_CHARS) {
       const systemMsg = messages[0];
-      const userMsg = messages[messages.length - 1].role === "user"
-        ? messages[messages.length - 1]
-        : messages.find((m, idx) => idx > 0 && m.role === "user");
-      // Keep only system + last user + recent rounds (assistant+tools stay paired)
       const recentStart = Math.max(1, messages.length - (KEPT_TOOL_MESSAGES * 3));
       const recentMsgs = messages.slice(recentStart);
-      messages.splice(0, messages.length, systemMsg, ...recentMsgs);
+      // Preserve original user message if it would be pruned
+      const firstUserIdx = messages.findIndex((m, idx) => idx > 0 && m.role === "user");
+      const firstUser = firstUserIdx > 0 && firstUserIdx < recentStart ? [messages[firstUserIdx]] : [];
+      messages.splice(0, messages.length, systemMsg, ...firstUser, ...recentMsgs);
+      totalChars = messages.reduce((s, m) => s + JSON.stringify(m).length, 0);
     }
   }
 

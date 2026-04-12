@@ -19,9 +19,10 @@ export function listTemplates(): string[] {
   }
 }
 
-/** Read a template by name */
+/** Read a template by name (path-safe: strips directory components) */
 export function readTemplate(name: string): string | null {
-  const fp = path.join(templatesRoot(), name.endsWith(".md") ? name : `${name}.md`);
+  const safeName = path.basename(name.endsWith(".md") ? name : `${name}.md`);
+  const fp = path.join(templatesRoot(), safeName);
   if (!fs.existsSync(fp)) return null;
   return fs.readFileSync(fp, "utf-8");
 }
@@ -53,10 +54,12 @@ export function createFromTemplate(
   const absTarget = path.isAbsolute(targetPath)
     ? targetPath
     : path.join(WORKSPACE_PATH, targetPath);
+  const resolved = path.resolve(absTarget);
+  if (!resolved.startsWith(WORKSPACE_PATH)) return null;
 
-  ensureDir(path.dirname(absTarget));
+  ensureDir(path.dirname(resolved));
 
   const content = applyTemplate(template, extraVars ?? {});
-  fs.writeFileSync(absTarget, content, "utf-8");
-  return absTarget;
+  fs.writeFileSync(resolved, content, "utf-8");
+  return resolved;
 }
