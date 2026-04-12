@@ -124,10 +124,10 @@ fi
 # ═══════════════════════════════════════════════════════════════════════════════
 step "3/8  Build"
 
-npm install --omit=dev 2>&1 | tail -1
+npm install 2>&1 | tail -3
 ok "npm install"
 
-npm run build 2>&1 | tail -1
+npm run build || fail "TypeScript Build fehlgeschlagen"
 ok "TypeScript kompiliert"
 
 npm link 2>/dev/null && ok "CLI global verlinkt" || true
