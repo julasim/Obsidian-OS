@@ -24,16 +24,51 @@ fail() { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 
 echo -e "\n${BOLD}${CYAN}  $BRAND Installation${NC}\n"
 
-# ── 1. Node.js prüfen ───────────────────────────────────────────────────────
-if ! command -v node &>/dev/null; then
-  fail "Node.js nicht gefunden. Bitte installieren: https://nodejs.org"
-fi
+# ── 1. Node.js prüfen / installieren ────────────────────────────────────────
+install_node() {
+  echo -e "\n  > Node.js wird installiert..."
+  if [[ "$(uname)" == "Linux" ]]; then
+    # NodeSource Setup fuer Node 22 LTS
+    if command -v apt-get &>/dev/null; then
+      curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+      sudo apt-get install -y nodejs
+    elif command -v dnf &>/dev/null; then
+      curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+      sudo dnf install -y nodejs
+    elif command -v yum &>/dev/null; then
+      curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+      sudo yum install -y nodejs
+    else
+      fail "Paketmanager nicht erkannt. Bitte Node.js manuell installieren: https://nodejs.org"
+    fi
+  elif [[ "$(uname)" == "Darwin" ]]; then
+    if command -v brew &>/dev/null; then
+      brew install node
+    else
+      fail "Homebrew nicht gefunden. Bitte Node.js manuell installieren: https://nodejs.org"
+    fi
+  else
+    fail "Betriebssystem nicht unterstuetzt. Bitte Node.js manuell installieren: https://nodejs.org"
+  fi
 
-NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
-if [ "$NODE_VERSION" -lt 18 ]; then
-  fail "Node.js >= 18 erforderlich (installiert: $(node -v))"
+  if ! command -v node &>/dev/null; then
+    fail "Node.js Installation fehlgeschlagen."
+  fi
+  ok "Node.js $(node -v) installiert"
+}
+
+if ! command -v node &>/dev/null; then
+  warn "Node.js nicht gefunden — wird installiert..."
+  install_node
+else
+  NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
+  if [ "$NODE_VERSION" -lt 18 ]; then
+    warn "Node.js $(node -v) zu alt — wird auf Version 22 aktualisiert..."
+    install_node
+  else
+    ok "Node.js $(node -v)"
+  fi
 fi
-ok "Node.js $(node -v)"
 
 # ── 2. npm install ───────────────────────────────────────────────────────────
 echo -e "\n  > Dependencies installieren..."
