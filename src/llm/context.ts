@@ -33,3 +33,16 @@ export function registerProcessAgent(fn: ProcessAgentFn): void {
 export function getProcessAgentFn(): ProcessAgentFn | null {
   return _processAgentFn;
 }
+
+// ---- File-Send Context (fuer PDF/DOCX-Export via Telegram) ----
+
+type FileSendFn = (buffer: Buffer, filename: string) => Promise<void>;
+let _fileSendFn: FileSendFn | null = null;
+
+export function setFileSendContext(fn: FileSendFn): void {
+  _fileSendFn = fn;
+}
+
+export function getFileSendFn(): FileSendFn | null {
+  return _fileSendFn;
+}

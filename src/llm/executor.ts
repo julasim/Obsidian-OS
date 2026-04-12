@@ -4,6 +4,7 @@ import {
   taskHandlers,
   terminHandlers,
   obsidianHandlers,
+  exportHandlers,
 } from "./handlers/index.js";
 import type { ToolHandler } from "./handlers/index.js";
 
@@ -14,13 +15,15 @@ export {
   getCurrentDepth,
   registerProcessAgent,
   getProcessAgentFn,
+  setFileSendContext,
+  getFileSendFn,
 } from "./context.js";
 
 // ---- Handler Registry ----
 
 const registry = new Map<string, ToolHandler>();
 
-for (const map of [noteHandlers, searchHandlers, taskHandlers, terminHandlers, obsidianHandlers]) {
+for (const map of [noteHandlers, searchHandlers, taskHandlers, terminHandlers, obsidianHandlers, exportHandlers]) {
   for (const [name, handler] of Object.entries(map)) {
     registry.set(name, handler);
   }

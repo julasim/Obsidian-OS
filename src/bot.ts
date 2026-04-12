@@ -1,8 +1,8 @@
-import { Bot } from "grammy";
+import { Bot, InputFile } from "grammy";
 import { saveNote, isMainWorkspaceConfigured } from "./workspace/index.js";
 import { processMessage, processBtw } from "./llm/runtime.js";
 import { processSetup, isSetupActive, activateSetup } from "./llm/setup.js";
-import { setReplyContext } from "./llm/executor.js";
+import { setReplyContext, setFileSendContext } from "./llm/executor.js";
 import { logError } from "./logger.js";
 import { enqueue } from "./queue.js";
 import { fmt, stripMarkdown } from "./format.js";
@@ -118,6 +118,9 @@ export function createBot(token: string): Bot {
       const typing = withTyping(ctx);
       try {
         setReplyContext((msg) => safeReply(ctx, msg).then(() => {}));
+        setFileSendContext(async (buffer, filename) => {
+          await ctx.replyWithDocument(new InputFile(new Uint8Array(buffer), filename));
+        });
         const antwort = await processMessage(raw);
         await safeReply(ctx, antwort);
       } catch (err: unknown) {
@@ -141,6 +144,9 @@ export function createBot(token: string): Bot {
       const typing = withTyping(ctx);
       try {
         setReplyContext((msg) => safeReply(ctx, msg).then(() => {}));
+        setFileSendContext(async (buffer, filename) => {
+          await ctx.replyWithDocument(new InputFile(new Uint8Array(buffer), filename));
+        });
         const antwort = await processMessage(text);
         await safeReply(ctx, antwort);
       } catch (err) {
