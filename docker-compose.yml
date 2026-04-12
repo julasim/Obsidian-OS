@@ -1,0 +1,14 @@
+services:
+  bot:
+    build: .
+    restart: always
+    env_file: .env
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    volumes:
+      - rclone-cache:/tmp/rclone
+
+volumes:
+  rclone-cache:
