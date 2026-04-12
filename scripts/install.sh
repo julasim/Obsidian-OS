@@ -7,8 +7,8 @@ set -euo pipefail
 
 BRAND="Obsidian-OS"
 SERVICE_NAME="obsidian-os"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+REPO_URL="https://github.com/julasim/Obsidian-OS.git"
+INSTALL_DIR="/opt/obsidian-os"
 
 # ── Farben ───────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'
@@ -70,13 +70,41 @@ else
   fi
 fi
 
-# ── 2. npm install ───────────────────────────────────────────────────────────
-echo -e "\n  > Dependencies installieren..."
+# ── 2. Git prüfen / Repo clonen ─────────────────────────────────────────────
+if ! command -v git &>/dev/null; then
+  echo -e "\n  > Git wird installiert..."
+  if command -v apt-get &>/dev/null; then
+    sudo apt-get install -y git
+  elif command -v dnf &>/dev/null; then
+    sudo dnf install -y git
+  elif command -v yum &>/dev/null; then
+    sudo yum install -y git
+  fi
+fi
+ok "Git $(git --version | cut -d' ' -f3)"
+
+if [ -d "$INSTALL_DIR/.git" ]; then
+  echo -e "\n  > Repository aktualisieren..."
+  cd "$INSTALL_DIR"
+  git pull --ff-only
+  ok "Repo aktualisiert"
+else
+  echo -e "\n  > Repository clonen..."
+  sudo mkdir -p "$INSTALL_DIR"
+  sudo chown "$(whoami)" "$INSTALL_DIR"
+  git clone "$REPO_URL" "$INSTALL_DIR"
+  ok "Repo gecloned nach $INSTALL_DIR"
+fi
+
+PROJECT_DIR="$INSTALL_DIR"
 cd "$PROJECT_DIR"
+
+# ── 3. npm install ───────────────────────────────────────────────────────────
+echo -e "\n  > Dependencies installieren..."
 npm install --production=false
 ok "npm install"
 
-# ── 3. .env erstellen ────────────────────────────────────────────────────────
+# ── 4. .env erstellen ────────────────────────────────────────────────────────
 if [ ! -f "$PROJECT_DIR/.env" ]; then
   cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
   warn ".env erstellt aus .env.example — bitte ausfuellen!"
@@ -84,16 +112,16 @@ else
   ok ".env vorhanden"
 fi
 
-# ── 4. TypeScript kompilieren ────────────────────────────────────────────────
+# ── 5. TypeScript kompilieren ────────────────────────────────────────────────
 echo -e "\n  > TypeScript kompilieren..."
 npm run build
 ok "Build erfolgreich"
 
-# ── 5. CLI global verlinken ──────────────────────────────────────────────────
+# ── 6. CLI global verlinken ──────────────────────────────────────────────────
 echo -e "\n  > CLI global verlinken..."
 npm link 2>/dev/null && ok "obsidian-os CLI verfuegbar" || warn "npm link fehlgeschlagen — verwende: npx obsidian-os"
 
-# ── 6. Whisper prüfen (optional) ────────────────────────────────────────────
+# ── 7. Whisper prüfen (optional) ────────────────────────────────────────────
 echo ""
 if command -v whisper &>/dev/null; then
   ok "Whisper installiert"
@@ -103,14 +131,11 @@ else
   warn "Python/pip nicht gefunden. Whisper (Sprachnachrichten) nicht verfuegbar."
 fi
 
-# ── 7. systemd Service (nur Linux) ──────────────────────────────────────────
+# ── 8. systemd Service (nur Linux) ──────────────────────────────────────────
 if [[ "$(uname)" == "Linux" ]] && command -v systemctl &>/dev/null; then
   echo ""
-  read -p "  Systemd-Service installieren? (j/N) " -n 1 -r
-  echo
-  if [[ $REPLY =~ ^[JjYy]$ ]]; then
-    SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-    sudo tee "$SERVICE_FILE" > /dev/null <<EOF
+  SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+  sudo tee "$SERVICE_FILE" > /dev/null <<EOF
 [Unit]
 Description=$BRAND — Obsidian Vault Assistant via Telegram
 After=network.target
@@ -126,12 +151,11 @@ Environment=NODE_ENV=production
 [Install]
 WantedBy=multi-user.target
 EOF
-    sudo systemctl daemon-reload
-    sudo systemctl enable "$SERVICE_NAME"
-    ok "Systemd-Service installiert: $SERVICE_NAME"
-    echo -e "     Start: ${CYAN}sudo systemctl start $SERVICE_NAME${NC}"
-    echo -e "     Logs:  ${CYAN}journalctl -u $SERVICE_NAME -f${NC}"
-  fi
+  sudo systemctl daemon-reload
+  sudo systemctl enable "$SERVICE_NAME"
+  ok "Systemd-Service installiert: $SERVICE_NAME"
+  echo -e "     Start: ${CYAN}sudo systemctl start $SERVICE_NAME${NC}"
+  echo -e "     Logs:  ${CYAN}journalctl -u $SERVICE_NAME -f${NC}"
 fi
 
 # ── Fertig ───────────────────────────────────────────────────────────────────
