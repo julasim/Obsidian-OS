@@ -202,11 +202,16 @@ done
 # Ollama Cloud Signin
 echo -e ""
 echo -e "  ${BOLD}Ollama Cloud Anmeldung:${NC}"
-echo -e "  Ein Link wird angezeigt — diesen im Browser oeffnen und anmelden.\n"
+echo -e "  Gleich erscheint ein Link — diesen im Browser oeffnen und anmelden.\n"
 
 docker compose exec bot ollama signin || warn "Signin fehlgeschlagen — spaeter: cd $INSTALL_DIR && docker compose exec bot ollama signin"
 
+echo -e ""
+read -rp "  Link im Browser geoeffnet und angemeldet? [Enter zum Fortfahren] "
+ok "Ollama Anmeldung abgeschlossen"
+
 # Container neu starten damit Bot die Anmeldung erkennt
+echo -e "\n  > Bot wird neu gestartet..."
 docker compose restart
 sleep 3
 
