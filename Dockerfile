@@ -1,9 +1,11 @@
 FROM node:22-slim
 
-# rclone + FUSE fuer OneDrive-Mount im Container
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    fuse3 curl ca-certificates && \
-    curl -fsSL https://rclone.org/install.sh | bash && \
+# System-Abhaengigkeiten + rclone
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends fuse3 curl ca-certificates unzip && \
+    curl -fsSL https://rclone.org/install.sh -o /tmp/install-rclone.sh && \
+    bash /tmp/install-rclone.sh && \
+    rm /tmp/install-rclone.sh && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
