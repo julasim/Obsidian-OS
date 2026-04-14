@@ -16,6 +16,16 @@ export function createFile(relativePath: string, content: string): string {
   return filepath;
 }
 
+export function moveFile(fromRelative: string, toRelative: string): string | null {
+  const src = safePath(fromRelative);
+  const dst = safePath(toRelative);
+  if (!src || !dst) return null;
+  if (!fs.existsSync(src)) return null;
+  ensureDir(path.dirname(dst));
+  fs.renameSync(src, dst);
+  return dst;
+}
+
 export interface FolderEntry {
   name: string;
   type: "folder" | "file";

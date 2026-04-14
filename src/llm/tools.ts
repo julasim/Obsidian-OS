@@ -6,6 +6,7 @@ import {
   terminSchemas,
   obsidianSchemas,
   exportSchemas,
+  ingestSchemas,
 } from "./handlers/index.js";
 
 const antwortenSchema: OpenAI.Chat.ChatCompletionTool = {
@@ -32,4 +33,5 @@ export const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   ...terminSchemas,
   ...obsidianSchemas,
   ...exportSchemas,
+  ...ingestSchemas,
 ];
