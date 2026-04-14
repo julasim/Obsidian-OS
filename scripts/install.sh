@@ -154,31 +154,25 @@ if [ -n "$CURRENT_RCLONE_TOKEN" ] && [ "${#CURRENT_RCLONE_TOKEN}" -gt 200 ]; the
 else
   echo -e "  Der Vault wird via OneDrive in den Container gemountet."
   echo -e ""
-  echo -e "  ${BOLD}So bekommst du das Token:${NC}"
-  echo -e "    1. Auf deinem ${CYAN}PC/Mac${NC} rclone installieren: ${CYAN}https://rclone.org/install/${NC}"
-  echo -e "    2. Ausfuehren: ${CYAN}rclone authorize \"onedrive\"${NC}"
-  echo -e "    3. Im Browser bei Microsoft anmelden"
-  echo -e "    4. rclone zeigt einen JSON-Block ${CYAN}{...}${NC} an — den KOMPLETT kopieren"
+  echo -e "  ${BOLD}1. Token auf deinem PC erzeugen:${NC}"
+  echo -e "     ${CYAN}rclone authorize \"onedrive\"${NC}  (rclone muss am PC installiert sein)"
+  echo -e "     Im Browser anmelden — rclone zeigt einen JSON-Block ${CYAN}{...}${NC}"
   echo -e ""
-  echo -e "  ${BOLD}Token einfuegen:${NC} Paste, dann ${CYAN}Enter${NC} + ${CYAN}Ctrl+D${NC}. (Leer + Ctrl+D = Skip)"
+  echo -e "  ${BOLD}2. Token ${RED}manuell${NC}${BOLD} in .env eintragen${NC} (Terminal-Paste kappt bei 4095 Zeichen!)"
+  echo -e "     Nach dem Script-Ende:"
+  echo -e "       ${CYAN}nano $INSTALL_DIR/.env${NC}"
+  echo -e "     Zeile ${CYAN}RCLONE_TOKEN=${NC} suchen, kompletten JSON dahinter einfuegen"
+  echo -e "     ${CYAN}Ctrl+O Enter Ctrl+X${NC} speichern, dann:"
+  echo -e "       ${CYAN}docker compose restart${NC}"
   echo -e ""
+  read -rp "  Enter zum Fortfahren (oder spaeter manuell nachholen)... " _
 
-  RCLONE_TOKEN_RAW="$(cat)"
-  RCLONE_TOKEN_INPUT="$(printf '%s' "$RCLONE_TOKEN_RAW" | tr -d '[:space:]')"
-
-  if [ -z "$RCLONE_TOKEN_INPUT" ]; then
-    warn "Kein Token — OneDrive uebersprungen. Spaeter in .env setzen."
-  else
-    env_set "RCLONE_TOKEN" "$RCLONE_TOKEN_INPUT"
-    ok "OneDrive Token gespeichert (${#RCLONE_TOKEN_INPUT} Zeichen)"
-
-    echo -e ""
-    echo -e "  ${BOLD}Drive-ID${NC} (optional, Enter = ueberspringen — wird dann automatisch erkannt):"
-    read -rp "  Drive-ID: " DRIVE_ID_INPUT
-    if [ -n "$DRIVE_ID_INPUT" ]; then
-      env_set "ONEDRIVE_DRIVE_ID" "$DRIVE_ID_INPUT"
-      ok "Drive-ID gespeichert"
-    fi
+  echo -e ""
+  echo -e "  ${BOLD}Drive-ID${NC} (optional — wird sonst automatisch erkannt):"
+  read -rp "  Drive-ID: " DRIVE_ID_INPUT
+  if [ -n "$DRIVE_ID_INPUT" ]; then
+    env_set "ONEDRIVE_DRIVE_ID" "$DRIVE_ID_INPUT"
+    ok "Drive-ID gespeichert"
   fi
 fi
 
