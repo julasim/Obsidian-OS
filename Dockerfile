@@ -2,7 +2,7 @@ FROM node:22-slim
 
 # System-Abhaengigkeiten + rclone + Ollama
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends fuse3 curl ca-certificates unzip && \
+    apt-get install -y --no-install-recommends fuse3 curl ca-certificates unzip zstd && \
     curl -fsSL https://rclone.org/install.sh -o /tmp/install-rclone.sh && \
     bash /tmp/install-rclone.sh && rm /tmp/install-rclone.sh && \
     curl -fsSL https://ollama.com/install.sh -o /tmp/install-ollama.sh && \
