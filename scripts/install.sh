@@ -144,31 +144,59 @@ step "5/6  Obsidian Vault (OneDrive)"
 
 CURRENT_RCLONE_TOKEN="$(env_get RCLONE_TOKEN)"
 
-if [ -n "$CURRENT_RCLONE_TOKEN" ]; then
-  ok "OneDrive Token vorhanden"
+# Token-Validierung: JSON muss mit { beginnen, mit } enden, refresh_token enthalten
+validate_rclone_token() {
+  local t="$1"
+  [[ "$t" =~ ^\{.*\}$ ]] || return 1
+  [[ "$t" == *"access_token"* ]] || return 1
+  [[ "$t" == *"refresh_token"* ]] || return 1
+  return 0
+}
+
+if [ -n "$CURRENT_RCLONE_TOKEN" ] && validate_rclone_token "$CURRENT_RCLONE_TOKEN"; then
+  ok "OneDrive Token vorhanden und valide"
 else
+  if [ -n "$CURRENT_RCLONE_TOKEN" ]; then
+    warn "Gespeicherter OneDrive Token ist unvollstaendig — bitte neu eingeben."
+  fi
+
   echo -e "  Der Vault wird via OneDrive in den Container gemountet."
   echo -e ""
   echo -e "  ${BOLD}So bekommst du das Token:${NC}"
   echo -e "    1. Auf deinem ${CYAN}PC/Mac${NC} rclone installieren: ${CYAN}https://rclone.org/install/${NC}"
   echo -e "    2. Ausfuehren: ${CYAN}rclone authorize \"onedrive\"${NC}"
   echo -e "    3. Im Browser bei Microsoft anmelden"
-  echo -e "    4. Das Token wird angezeigt — hierher kopieren"
+  echo -e "    4. rclone zeigt einen JSON-Block ${CYAN}{...}${NC} an — den KOMPLETT kopieren"
   echo -e ""
-  read -rp "  rclone Token (oder Enter zum Ueberspringen): " RCLONE_TOKEN_INPUT
+  echo -e "  ${BOLD}Token einfuegen:${NC}"
+  echo -e "    Paste den JSON-Block ins Terminal. Der Token darf ueber mehrere"
+  echo -e "    Zeilen gehen — das Script entfernt Zeilenumbrueche automatisch."
+  echo -e "    Danach ${CYAN}Enter${NC} und ${CYAN}Ctrl+D${NC} druecken um abzuschliessen."
+  echo -e "    (Leer lassen + Ctrl+D zum Ueberspringen.)"
+  echo -e ""
+
+  # Multi-line-safe Token-Eingabe: sammelt bis EOF, strippt Whitespace/Newlines
+  RCLONE_TOKEN_RAW="$(cat)"
+  RCLONE_TOKEN_INPUT="$(echo "$RCLONE_TOKEN_RAW" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
 
   if [ -n "$RCLONE_TOKEN_INPUT" ]; then
-    env_set "RCLONE_TOKEN" "$RCLONE_TOKEN_INPUT"
-    ok "OneDrive Token gespeichert"
+    if validate_rclone_token "$RCLONE_TOKEN_INPUT"; then
+      env_set "RCLONE_TOKEN" "$RCLONE_TOKEN_INPUT"
+      ok "OneDrive Token gespeichert ($(echo -n "$RCLONE_TOKEN_INPUT" | wc -c) Zeichen)"
 
-    echo -e ""
-    echo -e "  ${BOLD}Drive-ID:${NC}"
-    echo -e "  Beim ${CYAN}rclone authorize${NC} auf deinem PC wurde auch eine Drive-ID angezeigt."
-    echo -e "  Alternativ findest du sie unter: ${CYAN}OneDrive > Einstellungen > Konto${NC}"
-    read -rp "  Drive-ID: " DRIVE_ID_INPUT
-    if [ -n "$DRIVE_ID_INPUT" ]; then
-      env_set "ONEDRIVE_DRIVE_ID" "$DRIVE_ID_INPUT"
-      ok "Drive-ID gespeichert"
+      echo -e ""
+      echo -e "  ${BOLD}Drive-ID:${NC}"
+      echo -e "  Beim ${CYAN}rclone authorize${NC} auf deinem PC wurde auch eine Drive-ID angezeigt."
+      echo -e "  Alternativ findest du sie unter: ${CYAN}OneDrive > Einstellungen > Konto${NC}"
+      read -rp "  Drive-ID (optional, Enter zum Ueberspringen): " DRIVE_ID_INPUT
+      if [ -n "$DRIVE_ID_INPUT" ]; then
+        env_set "ONEDRIVE_DRIVE_ID" "$DRIVE_ID_INPUT"
+        ok "Drive-ID gespeichert"
+      fi
+    else
+      warn "Token sieht unvollstaendig aus — ${RED}NICHT gespeichert${NC}."
+      echo -e "  ${YELLOW}Erwartet: {...} mit access_token UND refresh_token${NC}"
+      echo -e "  ${YELLOW}Spaeter nochmal ausfuehren oder .env manuell editieren.${NC}"
     fi
   else
     warn "Kein Token — OneDrive uebersprungen. Spaeter in .env setzen."
