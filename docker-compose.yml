@@ -8,7 +8,9 @@ services:
     devices:
       - /dev/fuse
     volumes:
+      - ollama-data:/root/.ollama
       - rclone-cache:/tmp/rclone
 
 volumes:
+  ollama-data:
   rclone-cache:

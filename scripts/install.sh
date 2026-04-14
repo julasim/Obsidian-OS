@@ -39,11 +39,10 @@ echo -e "${BOLD}${CYAN}  ║       $BRAND Installation          ║${NC}"
 echo -e "${BOLD}${CYAN}  ╚══════════════════════════════════════╝${NC}\n"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  1. Docker + Git (einzige Host-Abhaengigkeiten)
+#  1. Docker + Git
 # ═══════════════════════════════════════════════════════════════════════════════
 step "1/6  Host-Abhaengigkeiten"
 
-# Docker
 if ! command -v docker &>/dev/null; then
   echo -e "  > Docker wird installiert..."
   curl -fsSL https://get.docker.com | sh
@@ -54,16 +53,13 @@ else
   ok "Docker $(docker --version | grep -oP '\d+\.\d+\.\d+')"
 fi
 
-# Docker Compose (v2 Plugin)
 if ! docker compose version &>/dev/null; then
   echo -e "  > Docker Compose Plugin wird installiert..."
   sudo apt-get update && sudo apt-get install -y docker-compose-plugin 2>/dev/null || true
 fi
 ok "Docker Compose $(docker compose version --short 2>/dev/null || echo 'ok')"
 
-# Git
 if ! command -v git &>/dev/null; then
-  echo -e "  > Git wird installiert..."
   sudo apt-get update && sudo apt-get install -y git
 fi
 ok "Git $(git --version | cut -d' ' -f3)"
@@ -89,6 +85,10 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
   cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
 fi
 
+# Ollama laeuft im Container — immer localhost
+env_set "OLLAMA_BASE_URL" "http://localhost:11434/v1"
+env_set "WORKSPACE_PATH" "/vault"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  3. Telegram Bot Token
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -111,11 +111,7 @@ if [ -z "$CURRENT_TOKEN" ]; then
     echo -e "  Token von ${CYAN}@BotFather${NC} in Telegram holen."
     read -rp "  Bot Token: " BOT_TOKEN_INPUT
     BOT_TOKEN_INPUT=$(echo "$BOT_TOKEN_INPUT" | xargs)
-
-    if [ -z "$BOT_TOKEN_INPUT" ]; then
-      warn "Token darf nicht leer sein."
-      continue
-    fi
+    [ -z "$BOT_TOKEN_INPUT" ] && { warn "Token darf nicht leer sein."; continue; }
 
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.telegram.org/bot${BOT_TOKEN_INPUT}/getMe")
     if [ "$HTTP_CODE" = "200" ]; then
@@ -130,44 +126,11 @@ if [ -z "$CURRENT_TOKEN" ]; then
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  4. LLM Konfiguration
+#  4. LLM Modell
 # ═══════════════════════════════════════════════════════════════════════════════
-step "4/6  LLM Konfiguration"
+step "4/6  LLM Modell"
 
-echo -e "  LLM API:"
-echo -e "    ${CYAN}1${NC}) Ollama Cloud  (api.ollama.com — empfohlen)"
-echo -e "    ${CYAN}2${NC}) OpenAI"
-echo -e "    ${CYAN}3${NC}) Andere URL"
-echo ""
-read -rp "  Auswahl [1]: " LLM_CHOICE
-LLM_CHOICE=${LLM_CHOICE:-1}
-
-case $LLM_CHOICE in
-  1)
-    env_set "OLLAMA_BASE_URL" "https://api.ollama.com/v1"
-    CURRENT_KEY="$(env_get OLLAMA_API_KEY)"
-    if [ -z "$CURRENT_KEY" ]; then
-      echo -e "  API Key von ${CYAN}ollama.com/settings/keys${NC}"
-      read -rp "  API Key: " API_KEY_INPUT
-      [ -n "$API_KEY_INPUT" ] && env_set "OLLAMA_API_KEY" "$API_KEY_INPUT"
-    fi
-    ok "Ollama Cloud konfiguriert"
-    ;;
-  2)
-    env_set "OLLAMA_BASE_URL" "https://api.openai.com/v1"
-    read -rp "  OpenAI API Key: " API_KEY_INPUT
-    [ -n "$API_KEY_INPUT" ] && env_set "OLLAMA_API_KEY" "$API_KEY_INPUT"
-    ok "OpenAI konfiguriert"
-    ;;
-  3)
-    read -rp "  API URL: " CUSTOM_URL
-    env_set "OLLAMA_BASE_URL" "$CUSTOM_URL"
-    read -rp "  API Key: " CUSTOM_KEY
-    [ -n "$CUSTOM_KEY" ] && env_set "OLLAMA_API_KEY" "$CUSTOM_KEY"
-    ok "Custom LLM konfiguriert"
-    ;;
-esac
-
+echo -e "  Ollama laeuft im Container. Cloud-Modelle haben ${CYAN}:cloud${NC} Suffix."
 CURRENT_MODEL="$(env_get OLLAMA_MODEL)"
 CURRENT_MODEL=${CURRENT_MODEL:-kimi-k2.5:cloud}
 read -rp "  Modell [$CURRENT_MODEL]: " MODEL_INPUT
@@ -178,9 +141,6 @@ ok "Modell: ${MODEL_INPUT:-$CURRENT_MODEL}"
 #  5. OneDrive / Vault
 # ═══════════════════════════════════════════════════════════════════════════════
 step "5/6  Obsidian Vault (OneDrive)"
-
-# WORKSPACE_PATH ist im Container immer /vault
-env_set "WORKSPACE_PATH" "/vault"
 
 CURRENT_RCLONE_TOKEN="$(env_get RCLONE_TOKEN)"
 
@@ -193,7 +153,7 @@ else
   echo -e "    1. Auf deinem ${CYAN}PC/Mac${NC} rclone installieren: ${CYAN}https://rclone.org/install/${NC}"
   echo -e "    2. Ausfuehren: ${CYAN}rclone authorize \"onedrive\"${NC}"
   echo -e "    3. Im Browser bei Microsoft anmelden"
-  echo -e "    4. Das Token wird in der Konsole angezeigt — hierher kopieren"
+  echo -e "    4. Das Token wird angezeigt — hierher kopieren"
   echo -e ""
   read -rp "  rclone Token (oder Enter zum Ueberspringen): " RCLONE_TOKEN_INPUT
 
@@ -201,51 +161,59 @@ else
     env_set "RCLONE_TOKEN" "$RCLONE_TOKEN_INPUT"
     ok "OneDrive Token gespeichert"
   else
-    warn "Kein Token — OneDrive wird uebersprungen."
-    warn "Spaeter in .env setzen: RCLONE_TOKEN=..."
+    warn "Kein Token — OneDrive uebersprungen. Spaeter in .env setzen."
   fi
 fi
 
-# Vault-Pfad auf OneDrive
 CURRENT_OD_PATH="$(env_get ONEDRIVE_VAULT_PATH)"
 if [ -n "$(env_get RCLONE_TOKEN)" ] && [ -z "$CURRENT_OD_PATH" ]; then
   echo -e ""
-  echo -e "  Wo liegt dein Obsidian Vault auf OneDrive?"
-  echo -e "  ${CYAN}Beispiel:${NC} Obsidian_Julius Sima"
-  read -rp "  OneDrive Vault-Pfad: " OD_PATH_INPUT
-  if [ -n "$OD_PATH_INPUT" ]; then
-    env_set "ONEDRIVE_VAULT_PATH" "$OD_PATH_INPUT"
-    ok "Vault-Pfad: $OD_PATH_INPUT"
-  fi
+  read -rp "  OneDrive Vault-Pfad (z.B. Obsidian_Julius Sima): " OD_PATH_INPUT
+  [ -n "$OD_PATH_INPUT" ] && env_set "ONEDRIVE_VAULT_PATH" "$OD_PATH_INPUT" && ok "Vault-Pfad: $OD_PATH_INPUT"
 elif [ -n "$CURRENT_OD_PATH" ]; then
   ok "Vault-Pfad: $CURRENT_OD_PATH"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  6. Container bauen + starten
+#  6. Container bauen + starten + Ollama signin
 # ═══════════════════════════════════════════════════════════════════════════════
 step "6/6  Container starten"
 
 cd "$INSTALL_DIR"
 
-echo -e "  > Image wird gebaut (kann beim ersten Mal 1-2 Min dauern)..."
-docker compose build --quiet
+echo -e "  > Image wird gebaut (kann beim ersten Mal einige Minuten dauern)..."
+docker compose build
 ok "Image gebaut"
 
-# Alten Container stoppen falls vorhanden
 docker compose down 2>/dev/null || true
-
 docker compose up -d
 ok "Container gestartet"
 
+# Warten bis Ollama im Container bereit ist
+echo -e "\n  > Warte auf Ollama im Container..."
+for i in $(seq 1 20); do
+  if docker compose exec -T bot curl -sf http://localhost:11434/api/version &>/dev/null; then
+    ok "Ollama laeuft im Container"
+    break
+  fi
+  sleep 2
+done
+
+# Ollama Cloud Signin
+echo -e ""
+echo -e "  ${BOLD}Ollama Cloud Anmeldung:${NC}"
+echo -e "  Ein Link wird angezeigt — diesen im Browser oeffnen und anmelden.\n"
+
+docker compose exec bot ollama signin || warn "Signin fehlgeschlagen — spaeter: cd $INSTALL_DIR && docker compose exec bot ollama signin"
+
+# Container neu starten damit Bot die Anmeldung erkennt
+docker compose restart
 sleep 3
-if docker compose ps --format json 2>/dev/null | grep -q '"running"'; then
-  ok "$BRAND laeuft!"
-elif docker compose ps 2>/dev/null | grep -q "Up"; then
+
+if docker compose ps 2>/dev/null | grep -q "Up"; then
   ok "$BRAND laeuft!"
 else
-  warn "Container gestartet — Status pruefen:"
-  echo -e "     ${CYAN}docker compose -f $INSTALL_DIR/docker-compose.yml logs -f${NC}"
+  warn "Status pruefen: cd $INSTALL_DIR && docker compose logs -f"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -257,7 +225,6 @@ echo -e "${BOLD}${GREEN}  ╚═════════════════
 
 echo -e "  ${BOLD}Konfiguration:${NC}"
 echo -e "    Verzeichnis:  ${CYAN}$INSTALL_DIR${NC}"
-echo -e "    LLM:          ${CYAN}$(env_get OLLAMA_BASE_URL)${NC}"
 echo -e "    Modell:       ${CYAN}$(env_get OLLAMA_MODEL)${NC}"
 echo -e ""
 echo -e "  ${BOLD}Befehle:${NC}"
@@ -266,5 +233,6 @@ echo -e "    Restart:  ${CYAN}cd $INSTALL_DIR && docker compose restart${NC}"
 echo -e "    Stop:     ${CYAN}cd $INSTALL_DIR && docker compose down${NC}"
 echo -e "    Update:   ${CYAN}cd $INSTALL_DIR && git pull && docker compose up -d --build${NC}"
 echo -e "    Config:   ${CYAN}nano $INSTALL_DIR/.env${NC}"
+echo -e "    Signin:   ${CYAN}cd $INSTALL_DIR && docker compose exec bot ollama signin${NC}"
 echo -e ""
 echo -e "  ${BOLD}Jetzt Telegram oeffnen und dem Bot schreiben!${NC}\n"
