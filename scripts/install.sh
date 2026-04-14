@@ -168,6 +168,22 @@ else
   read -rp "  Enter zum Fortfahren (oder spaeter manuell nachholen)... " _
 
   echo -e ""
+  echo -e "  ${BOLD}OneDrive-Typ:${NC}"
+  echo -e "    ${CYAN}1)${NC} personal   — privates Microsoft-Konto (outlook.com, hotmail.com, live.com)"
+  echo -e "    ${CYAN}2)${NC} business   — Geschaefts-/Uni-Konto (Microsoft 365, SharePoint)"
+  echo -e "    ${CYAN}3)${NC} documentLibrary — SharePoint-Dokumentbibliothek"
+  while true; do
+    read -rp "  Auswahl [1/2/3] (default 2 = business): " DRIVE_TYPE_CHOICE
+    DRIVE_TYPE_CHOICE="${DRIVE_TYPE_CHOICE:-2}"
+    case "$DRIVE_TYPE_CHOICE" in
+      1) env_set "ONEDRIVE_DRIVE_TYPE" "personal"; ok "Typ: personal"; break;;
+      2) env_set "ONEDRIVE_DRIVE_TYPE" "business"; ok "Typ: business"; break;;
+      3) env_set "ONEDRIVE_DRIVE_TYPE" "documentLibrary"; ok "Typ: documentLibrary"; break;;
+      *) warn "Ungueltig — 1, 2 oder 3 waehlen";;
+    esac
+  done
+
+  echo -e ""
   echo -e "  ${BOLD}Drive-ID${NC} (optional — wird sonst automatisch erkannt):"
   read -rp "  Drive-ID: " DRIVE_ID_INPUT
   if [ -n "$DRIVE_ID_INPUT" ]; then
