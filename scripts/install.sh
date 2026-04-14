@@ -160,6 +160,16 @@ else
   if [ -n "$RCLONE_TOKEN_INPUT" ]; then
     env_set "RCLONE_TOKEN" "$RCLONE_TOKEN_INPUT"
     ok "OneDrive Token gespeichert"
+
+    echo -e ""
+    echo -e "  ${BOLD}Drive-ID:${NC}"
+    echo -e "  Beim ${CYAN}rclone authorize${NC} auf deinem PC wurde auch eine Drive-ID angezeigt."
+    echo -e "  Alternativ findest du sie unter: ${CYAN}OneDrive > Einstellungen > Konto${NC}"
+    read -rp "  Drive-ID: " DRIVE_ID_INPUT
+    if [ -n "$DRIVE_ID_INPUT" ]; then
+      env_set "ONEDRIVE_DRIVE_ID" "$DRIVE_ID_INPUT"
+      ok "Drive-ID gespeichert"
+    fi
   else
     warn "Kein Token — OneDrive uebersprungen. Spaeter in .env setzen."
   fi
