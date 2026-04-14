@@ -129,10 +129,13 @@ ${bold(cyan(`  ${BRAND} Konfiguration`))}
   WHISPER_MODEL      ${env.WHISPER_MODEL || dim("large-v3")}
   WHISPER_LANG       ${env.WHISPER_LANG || dim("de")}
 
-  ${bold("Obsidian")}
-  DAILY_NOTES_DIR    ${env.DAILY_NOTES_DIR || dim("Daily")}
-  TEMPLATES_DIR      ${env.TEMPLATES_DIR || dim("Templates")}
-  ATTACHMENTS_DIR    ${env.ATTACHMENTS_DIR || dim("Attachments")}
+  ${bold("Vault-Struktur (optional \u2014 gesteuert via CLAUDE.md im Vault)")}
+  INBOX_DIR              ${env.INBOX_DIR || dim("Inbox")}
+  DAILY_NOTES_DIR        ${env.DAILY_NOTES_DIR || dim("Daily")}
+  TEMPLATES_DIR          ${env.TEMPLATES_DIR || dim("Templates")}
+  ATTACHMENTS_DIR        ${env.ATTACHMENTS_DIR || dim("Attachments")}
+  PROJECTS_DIR           ${env.PROJECTS_DIR || dim("Projekte")}
+  PROJECT_NOTES_SUBDIR   ${env.PROJECT_NOTES_SUBDIR || dim("Notizen")}
 `);
 }
 

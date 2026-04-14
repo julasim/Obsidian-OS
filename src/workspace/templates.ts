@@ -1,9 +1,12 @@
 import fs from "fs";
 import path from "path";
-import { WORKSPACE_PATH, TEMPLATES_DIR, LOCALE, TIMEZONE } from "../config.js";
-import { ensureDir } from "./helpers.js";
+import { WORKSPACE_PATH, LOCALE, TIMEZONE } from "../config.js";
+import { ensureDir, resolveDir } from "./helpers.js";
 
-const templatesRoot = () => path.join(WORKSPACE_PATH, TEMPLATES_DIR);
+// Default-Fallback — Struktur wird primär via CLAUDE.md gesteuert.
+const TEMPLATES_DIR = process.env.TEMPLATES_DIR || "Templates";
+
+const templatesRoot = () => resolveDir(WORKSPACE_PATH, TEMPLATES_DIR);
 
 /** List all template names (without .md) */
 export function listTemplates(): string[] {

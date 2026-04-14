@@ -10,13 +10,14 @@ export const noteSchemas: OpenAI.Chat.ChatCompletionTool[] = [
     function: {
       name: "notiz_speichern",
       description:
-        "Speichert eine neue Notiz im Vault. Vergib IMMER einen aussagekraeftigen Titel und mindestens 1 Tag. Wenn der Inhalt zu einem bekannten Projekt gehoert, setze den Projekt-Parameter. Fuer ausfuehrliche Inhalte, Ideen, Konzepte, Zusammenfassungen — alles was keine Aufgabe/Termin/kurzer Gedanke ist.",
+        "Speichert eine neue Notiz im Vault. Vergib IMMER einen aussagekraeftigen Titel und mindestens 1 Tag. Routing: (1) Explizit via 'ordner' (relativer Pfad, z.B. 'wiki' oder 'raw') — Bot entscheidet via CLAUDE.md-Regeln. (2) Via 'projekt' als Shortcut (speichert in Projekte/{name}/Notizen/). (3) Ohne beides: Inbox-Fallback. Fuer ausfuehrliche Inhalte, Ideen, Konzepte, Zusammenfassungen — alles was keine Aufgabe/Termin/kurzer Gedanke ist.",
       parameters: {
         type: "object",
         properties: {
           text: { type: "string", description: "Inhalt der Notiz (Markdown, strukturiert mit Ueberschriften/Listen wenn sinnvoll)" },
           titel: { type: "string", description: "Kurzer, aussagekraeftiger Titel (2-5 Woerter, IMMER angeben)" },
-          projekt: { type: "string", description: "Projektname falls zuordenbar (speichert in Projekte/{name}/Notizen/)" },
+          ordner: { type: "string", description: "Expliziter Zielordner relativ zum Vault (z.B. 'wiki', 'raw', 'archiv/notizen'). Bot nutzt Routing aus CLAUDE.md." },
+          projekt: { type: "string", description: "Projektname falls zuordenbar (Shortcut: speichert in Projekte/{name}/Notizen/)" },
           tags: { type: "string", description: "Komma-separierte Tags (IMMER mindestens 1, z.B. 'idee', 'meeting,protokoll', 'recherche')" },
         },
         required: ["text"],
@@ -77,16 +78,20 @@ export const noteHandlers: HandlerMap = {
     const text = String(args.text || "");
     if (!text) return "Fehler: Kein Text angegeben.";
     const tags = args.tags ? String(args.tags).split(",").map((t) => t.trim()) : undefined;
-    const filepath = saveNote(
-      text,
-      args.projekt ? String(args.projekt) : undefined,
-      args.titel ? String(args.titel) : undefined,
+    const filepath = saveNote(text, {
+      project: args.projekt ? String(args.projekt) : undefined,
+      title: args.titel ? String(args.titel) : undefined,
+      ordner: args.ordner ? String(args.ordner) : undefined,
       tags,
-    );
+    });
     // Return wikilink-friendly name so agent can reference it in subsequent calls
     const filename = filepath.split(/[\\/]/).pop()?.replace(/\.md$/, "") ?? "";
-    const projekt = args.projekt ? ` (Projekt: ${args.projekt})` : "";
-    return `Notiz gespeichert: [[${filename}]]${projekt}`;
+    const locationHint = args.projekt
+      ? ` (Projekt: ${args.projekt})`
+      : args.ordner
+        ? ` (${args.ordner})`
+        : "";
+    return `Notiz gespeichert: [[${filename}]]${locationHint}`;
   },
 
   notiz_lesen: async (args) => {

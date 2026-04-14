@@ -14,8 +14,12 @@ import {
   upsertFrontmatterField,
   appendAgentMemory,
 } from "../../workspace/index.js";
-import { WORKSPACE_PATH, ATTACHMENTS_DIR, VISION_MODEL } from "../../config.js";
+import { WORKSPACE_PATH, VISION_MODEL } from "../../config.js";
+import { resolveDir } from "../../workspace/helpers.js";
 import type { HandlerMap } from "./types.js";
+
+// Default-Fallback — Struktur wird primär via CLAUDE.md gesteuert.
+const ATTACHMENTS_DIR = process.env.ATTACHMENTS_DIR || "Attachments";
 
 export const obsidianSchemas: OpenAI.Chat.ChatCompletionTool[] = [
   {
@@ -227,7 +231,7 @@ export const obsidianHandlers: HandlerMap = {
       ? String(args.aufgabe)
       : "Beschreibe dieses Bild detailliert. Falls Text sichtbar ist, transkribiere ihn vollstaendig.";
 
-    const bildPfad = path.join(WORKSPACE_PATH, ATTACHMENTS_DIR, dateiname);
+    const bildPfad = path.join(resolveDir(WORKSPACE_PATH, ATTACHMENTS_DIR), dateiname);
     if (!fs.existsSync(bildPfad)) return `Bild nicht gefunden: ${ATTACHMENTS_DIR}/${dateiname}`;
 
     const ext = path.extname(dateiname).toLowerCase().slice(1);

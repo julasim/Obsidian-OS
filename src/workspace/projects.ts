@@ -1,6 +1,5 @@
 import fs from "fs";
-import path from "path";
-import { workspacePath } from "./helpers.js";
+import { projectPath } from "./helpers.js";
 import { listTasks } from "./tasks.js";
 import { listTermine } from "./termine.js";
 
@@ -15,8 +14,10 @@ function safeProjectName(name: string): boolean {
   return /^[\w\-. ]+$/.test(name) && !name.includes("..");
 }
 
+const PROJECT_NOTES_SUBDIR = process.env.PROJECT_NOTES_SUBDIR || "Notizen";
+
 export function listProjects(): string[] {
-  const projektePath = path.join(workspacePath, "Projekte");
+  const projektePath = projectPath();
   if (!fs.existsSync(projektePath)) return [];
   try {
     return fs
@@ -30,11 +31,11 @@ export function listProjects(): string[] {
 
 export function getProjectInfo(name: string): ProjectInfo | null {
   if (!safeProjectName(name)) return null;
-  const projectPath = path.join(workspacePath, "Projekte", name);
-  if (!fs.existsSync(projectPath)) return null;
+  const pPath = projectPath(name);
+  if (!fs.existsSync(pPath)) return null;
   const openTasks = listTasks(name).filter((t) => t.status !== "done").length;
   const termine = listTermine(name).length;
-  const notesDir = path.join(projectPath, "Notizen");
+  const notesDir = projectPath(name, PROJECT_NOTES_SUBDIR);
   let noteCount = 0;
   try {
     if (fs.existsSync(notesDir)) {
@@ -46,7 +47,7 @@ export function getProjectInfo(name: string): ProjectInfo | null {
 
 export function listProjectNotes(name: string): string[] {
   if (!safeProjectName(name)) return [];
-  const notesDir = path.join(workspacePath, "Projekte", name, "Notizen");
+  const notesDir = projectPath(name, PROJECT_NOTES_SUBDIR);
   if (!fs.existsSync(notesDir)) return [];
   try {
     return fs
@@ -62,7 +63,7 @@ export function listProjectNotes(name: string): string[] {
 
 export function readProjectNote(project: string, noteName: string): string | null {
   if (!safeProjectName(project)) return null;
-  const filepath = path.join(workspacePath, "Projekte", project, "Notizen", noteName + ".md");
+  const filepath = projectPath(project, PROJECT_NOTES_SUBDIR, noteName + ".md");
   if (!fs.existsSync(filepath)) return null;
   return fs.readFileSync(filepath, "utf-8");
 }

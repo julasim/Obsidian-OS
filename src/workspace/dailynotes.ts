@@ -1,22 +1,14 @@
 import fs from "fs";
 import path from "path";
-import { WORKSPACE_PATH, DAILY_NOTES_DIR, LOCALE, TIMEZONE } from "../config.js";
-import { ensureDir } from "./helpers.js";
+import { WORKSPACE_PATH, LOCALE, TIMEZONE } from "../config.js";
+import { ensureDir, resolveDir } from "./helpers.js";
 
-/** Resolve DAILY_NOTES_DIR case-insensitively (Daily/daily/DAILY all work) */
+// Default-Fallback — Struktur wird primär via CLAUDE.md gesteuert.
+const DAILY_DIR = process.env.DAILY_NOTES_DIR || "Daily";
+
+/** Resolve daily notes folder case-insensitively (Daily/daily/DAILY all work) */
 function resolveDailyDir(): string {
-  const direct = path.join(WORKSPACE_PATH, DAILY_NOTES_DIR);
-  if (fs.existsSync(direct)) return direct;
-  try {
-    const entries = fs.readdirSync(WORKSPACE_PATH, { withFileTypes: true });
-    const match = entries.find(
-      (e) => e.isDirectory() && e.name.toLowerCase() === DAILY_NOTES_DIR.toLowerCase(),
-    );
-    if (match) return path.join(WORKSPACE_PATH, match.name);
-  } catch {
-    /* workspace not readable */
-  }
-  return direct; // fallback to configured path (will be created on write)
+  return resolveDir(WORKSPACE_PATH, DAILY_DIR);
 }
 
 /** Returns absolute path for a daily note */
@@ -64,8 +56,9 @@ export function createDailyNote(date?: Date): string {
   const fp = dailyNotePath(d);
   ensureDir(path.dirname(fp));
 
-  // Try to use Templates/Daily.md if available
-  const templatePath = path.join(WORKSPACE_PATH, "Templates", "Daily.md");
+  // Try to use Templates/Daily.md if available (case-insensitive lookup)
+  const templatesDir = resolveDir(WORKSPACE_PATH, process.env.TEMPLATES_DIR || "Templates");
+  const templatePath = path.join(templatesDir, "Daily.md");
   if (fs.existsSync(templatePath)) {
     const template = fs.readFileSync(templatePath, "utf-8");
     const vars: Record<string, string> = {

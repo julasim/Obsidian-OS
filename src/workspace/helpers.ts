@@ -1,8 +1,41 @@
 import fs from "fs";
 import path from "path";
-import { WORKSPACE_PATH, WORKSPACE_INBOX, LOCALE, SKIP_DIRS } from "../config.js";
+import { WORKSPACE_PATH, LOCALE, SKIP_DIRS } from "../config.js";
 
 export const workspacePath = WORKSPACE_PATH;
+
+/**
+ * Resolve a subdirectory case-insensitively under a parent.
+ * Returns the absolute path to the existing folder (whatever its casing),
+ * or the configured path as fallback (for write operations that will create it).
+ * Essential on case-sensitive filesystems (Linux/Docker) where "Daily" ≠ "daily".
+ */
+export function resolveDir(parent: string, name: string): string {
+  const direct = path.join(parent, name);
+  if (fs.existsSync(direct)) return direct;
+  try {
+    const entries = fs.readdirSync(parent, { withFileTypes: true });
+    const match = entries.find(
+      (e) => e.isDirectory() && e.name.toLowerCase() === name.toLowerCase(),
+    );
+    if (match) return path.join(parent, match.name);
+  } catch {
+    /* parent not readable */
+  }
+  return direct; // fallback to configured path (will be created on write)
+}
+
+/**
+ * Resolve project folder path (case-insensitive Projekte/-root).
+ * projectPath()                    → absolute path to Projekte/
+ * projectPath("WebApp")            → absolute path to Projekte/WebApp
+ * projectPath("WebApp", "Notizen") → absolute path to Projekte/WebApp/Notizen
+ */
+export function projectPath(projectName?: string, ...subPaths: string[]): string {
+  const projectsDir = process.env.PROJECTS_DIR || "Projekte";
+  const root = resolveDir(workspacePath, projectsDir);
+  return projectName ? path.join(root, projectName, ...subPaths) : root;
+}
 
 export function timestampFilename(): string {
   return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -69,12 +102,8 @@ export function walkMarkdownFiles(
 export function resolveNotePath(nameOrPath: string): string | null {
   const withExt = nameOrPath.endsWith(".md") ? nameOrPath : nameOrPath + ".md";
 
-  for (const candidate of [
-    path.join(workspacePath, withExt),
-    path.join(workspacePath, WORKSPACE_INBOX, withExt),
-  ]) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
+  const directPath = path.join(workspacePath, withExt);
+  if (fs.existsSync(directPath)) return directPath;
 
   function searchDir(dir: string): string | null {
     if (!fs.existsSync(dir)) return null;

@@ -3,16 +3,19 @@ import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
 import type { Context } from "grammy";
-import { WORKSPACE_PATH, ATTACHMENTS_DIR, VISION_MODEL, EXTRACT_MAX_CHARS, WHISPER_MODEL, WHISPER_LANG } from "./config.js";
-import { ensureDir } from "./workspace/helpers.js";
+import { WORKSPACE_PATH, VISION_MODEL, EXTRACT_MAX_CHARS, WHISPER_MODEL, WHISPER_LANG } from "./config.js";
+import { ensureDir, resolveDir } from "./workspace/helpers.js";
 import { logError, logInfo } from "./logger.js";
 
 const execAsync = promisify(exec);
 
+// Default-Fallback — Struktur wird primär via CLAUDE.md gesteuert.
+const ATTACHMENTS_DIR = process.env.ATTACHMENTS_DIR || "Attachments";
+
 // ---- Helpers ----
 
 function attachmentsDir(): string {
-  const dir = path.join(WORKSPACE_PATH, ATTACHMENTS_DIR);
+  const dir = resolveDir(WORKSPACE_PATH, ATTACHMENTS_DIR);
   ensureDir(dir);
   return dir;
 }

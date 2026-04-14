@@ -1,7 +1,11 @@
 import fs from "fs";
 import path from "path";
-import { WORKSPACE_INBOX, LOCALE } from "../config.js";
-import { workspacePath, timestampFilename, ensureDir, resolveNotePath, atomicWriteSync } from "./helpers.js";
+import { LOCALE } from "../config.js";
+import { workspacePath, timestampFilename, ensureDir, resolveNotePath, atomicWriteSync, resolveDir, safePath, projectPath } from "./helpers.js";
+
+// Default-Fallback für Inbox — Struktur wird primär via CLAUDE.md gesteuert.
+const INBOX_DIR = process.env.INBOX_DIR || "Inbox";
+const PROJECT_NOTES_SUBDIR = process.env.PROJECT_NOTES_SUBDIR || "Notizen";
 
 /** Sanitize title for safe, wikilink-friendly filenames */
 function titleToFilename(title: string): string {
@@ -12,10 +16,26 @@ function titleToFilename(title: string): string {
     .slice(0, 120);                        // reasonable length limit
 }
 
-export function saveNote(content: string, project?: string, title?: string, tags?: string[]): string {
-  const folder = project
-    ? path.join(workspacePath, "Projekte", project, "Notizen")
-    : path.join(workspacePath, WORKSPACE_INBOX);
+export interface SaveNoteOptions {
+  project?: string;
+  title?: string;
+  tags?: string[];
+  ordner?: string; // explicit relative folder path — overrides project/default
+}
+
+export function saveNote(content: string, opts: SaveNoteOptions = {}): string {
+  let folder: string;
+  if (opts.ordner) {
+    // Explicit folder path (safePath blocks traversal) — Bot entscheidet via CLAUDE.md
+    const resolved = safePath(opts.ordner);
+    folder = resolved ?? path.join(workspacePath, resolveDir(workspacePath, INBOX_DIR));
+  } else if (opts.project) {
+    folder = projectPath(opts.project, PROJECT_NOTES_SUBDIR);
+  } else {
+    folder = resolveDir(workspacePath, INBOX_DIR);
+  }
+  const title = opts.title;
+  const tags = opts.tags;
 
   ensureDir(folder);
 
@@ -45,7 +65,7 @@ export function saveNote(content: string, project?: string, title?: string, tags
 }
 
 export function listNotes(limit = 10): string[] {
-  const inboxPath = path.join(workspacePath, WORKSPACE_INBOX);
+  const inboxPath = resolveDir(workspacePath, INBOX_DIR);
   if (!fs.existsSync(inboxPath)) return [];
   try {
     return fs

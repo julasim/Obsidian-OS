@@ -24,16 +24,14 @@ export const KEEP_RECENT_LOGS = 5;
 export const HISTORY_LOAD_LIMIT = 10;
 export const KEPT_TOOL_MESSAGES = 3;
 
-// ── Workspace ────────────────────────────────────────────────────────────────
+// ── Workspace (technisch, nicht Vault-Struktur) ─────────────────────────────
+// Vault-Struktur (Inbox/Daily/Templates/Projekte/...) wird via CLAUDE.md im Vault
+// definiert und vom Bot via Tool-Parameter angesprochen. Hier nur System-Interne Pfade.
 export const WORKSPACE_PATH = process.env.WORKSPACE_PATH ?? process.env.VAULT_PATH ?? "";
-export const WORKSPACE_INBOX = "Inbox";
 export const WORKSPACE_AGENTS_DIR = "Agents";
 export const WORKSPACE_LOGS_DIR = "MEMORY_LOGS";
 
-// ── Obsidian ─────────────────────────────────────────────────────────────────
-export const DAILY_NOTES_DIR = process.env.DAILY_NOTES_DIR || "Daily";
-export const TEMPLATES_DIR = process.env.TEMPLATES_DIR || "Templates";
-export const ATTACHMENTS_DIR = process.env.ATTACHMENTS_DIR || "Attachments";
+// ── Dokumenten-Extraktion ──────────────────────────────────────────────────
 export const EXTRACT_MAX_CHARS = 50_000;
 
 // ── Sicherheit ───────────────────────────────────────────────────────────────
