@@ -149,88 +149,117 @@ step "5/6  Obsidian Vault (OneDrive)"
 
 CURRENT_RCLONE_TOKEN="$(env_get RCLONE_TOKEN)"
 
-# Token-Validierung ohne Regex (substring + first/last char — robust bei sehr langen Tokens).
-# Gibt bei Fehler den konkreten Grund auf stderr aus.
-validate_rclone_token() {
-  local t="$1"
-  local len="${#t}"
+# Token-Validierung via grep (zuverlaessiger als bash-case bei >2KB-Strings).
+# Erwartet Token als Datei-Pfad. Gibt bei Fehler den konkreten Grund auf stderr aus.
+validate_rclone_token_file() {
+  local file="$1"
+  if [ ! -f "$file" ]; then
+    echo "  Datei nicht gefunden: $file" >&2
+    return 1
+  fi
+  local len
+  len="$(wc -c < "$file" | tr -d ' ')"
   if [ "$len" -lt 200 ]; then
     echo "  Token zu kurz: $len Zeichen (erwartet >1000)" >&2
     return 1
   fi
-  if [ "${t:0:1}" != "{" ]; then
-    echo "  Token beginnt nicht mit { — erstes Zeichen: '${t:0:1}'" >&2
+  local first last
+  first="$(head -c 1 "$file")"
+  last="$(tail -c 1 "$file")"
+  if [ "$first" != "{" ]; then
+    echo "  Token beginnt nicht mit { — erstes Zeichen: '$first'" >&2
     return 1
   fi
-  if [ "${t: -1}" != "}" ]; then
-    echo "  Token endet nicht mit } — letztes Zeichen: '${t: -1}'" >&2
+  if [ "$last" != "}" ]; then
+    echo "  Token endet nicht mit } — letztes Zeichen: '$last'" >&2
     return 1
   fi
-  case "$t" in
-    *access_token*) ;;
-    *) echo "  Token enthaelt kein 'access_token'" >&2; return 1;;
-  esac
-  case "$t" in
-    *refresh_token*) ;;
-    *) echo "  Token enthaelt kein 'refresh_token'" >&2; return 1;;
-  esac
+  if ! grep -q '"access_token"' "$file"; then
+    echo "  Token enthaelt kein \"access_token\"" >&2
+    return 1
+  fi
+  if ! grep -q '"refresh_token"' "$file"; then
+    echo "  Token enthaelt kein \"refresh_token\"" >&2
+    return 1
+  fi
   return 0
 }
 
-if [ -n "$CURRENT_RCLONE_TOKEN" ] && validate_rclone_token "$CURRENT_RCLONE_TOKEN" 2>/dev/null; then
-  ok "OneDrive Token vorhanden und valide"
-else
-  if [ -n "$CURRENT_RCLONE_TOKEN" ]; then
+# Schreibt aktuellen Token in temp file + prueft
+TMP_TOKEN_FILE="/tmp/obsidian-os-token.json"
+TOKEN_OK=""
+
+if [ -n "$CURRENT_RCLONE_TOKEN" ]; then
+  printf '%s' "$CURRENT_RCLONE_TOKEN" | tr -d '[:space:]' > "$TMP_TOKEN_FILE"
+  if validate_rclone_token_file "$TMP_TOKEN_FILE" 2>/dev/null; then
+    ok "OneDrive Token vorhanden und valide"
+    TOKEN_OK="yes"
+  else
     warn "Gespeicherter OneDrive Token ist unvollstaendig — bitte neu eingeben."
   fi
+fi
 
+if [ -z "$TOKEN_OK" ]; then
   echo -e "  Der Vault wird via OneDrive in den Container gemountet."
   echo -e ""
-  echo -e "  ${BOLD}So bekommst du das Token:${NC}"
-  echo -e "    1. Auf deinem ${CYAN}PC/Mac${NC} rclone installieren: ${CYAN}https://rclone.org/install/${NC}"
-  echo -e "    2. Ausfuehren: ${CYAN}rclone authorize \"onedrive\"${NC}"
-  echo -e "    3. Im Browser bei Microsoft anmelden"
-  echo -e "    4. rclone zeigt einen JSON-Block ${CYAN}{...}${NC} an — den KOMPLETT kopieren"
+  echo -e "  ${BOLD}1. Token auf deinem PC erzeugen:${NC}"
+  echo -e "     ${CYAN}rclone authorize \"onedrive\"${NC}"
+  echo -e "     Im Browser bei Microsoft anmelden. rclone zeigt einen JSON-Block ${CYAN}{...}${NC}"
   echo -e ""
-  echo -e "  ${BOLD}Token einfuegen:${NC}"
-  echo -e "    Paste den JSON-Block ins Terminal. Der Token darf ueber mehrere"
-  echo -e "    Zeilen gehen — das Script entfernt Zeilenumbrueche automatisch."
-  echo -e "    Danach ${CYAN}Enter${NC} und ${CYAN}Ctrl+D${NC} druecken um abzuschliessen."
-  echo -e "    (Leer lassen + Ctrl+D zum Ueberspringen.)"
+  echo -e "  ${BOLD}2. Token in eine Datei auf DIESEM Server schreiben:${NC}"
+  echo -e "     Oeffne ein ${CYAN}zweites Terminal-Fenster${NC} und fuehre aus:"
+  echo -e "       ${CYAN}nano /tmp/rclone-token.json${NC}"
+  echo -e "     JSON komplett einfuegen, mit ${CYAN}Ctrl+O Enter Ctrl+X${NC} speichern."
+  echo -e ""
+  echo -e "  ${BOLD}3. Pfad hier eingeben${NC} (oder leer lassen zum Ueberspringen):"
   echo -e ""
 
-  # Retry-Loop: bis zu 3 Versuche
-  TOKEN_OK=""
   for attempt in 1 2 3; do
-    # Multi-line-safe Eingabe: sammelt bis EOF, dann strippt ALLE Whitespaces (inkl. Tabs, Newlines)
-    RCLONE_TOKEN_RAW="$(cat)"
-    RCLONE_TOKEN_INPUT="$(printf '%s' "$RCLONE_TOKEN_RAW" | tr -d '[:space:]')"
+    read -rp "  Token-Datei [/tmp/rclone-token.json]: " TOKEN_FILE_INPUT
+    TOKEN_FILE_INPUT="${TOKEN_FILE_INPUT:-/tmp/rclone-token.json}"
 
-    if [ -z "$RCLONE_TOKEN_INPUT" ]; then
-      warn "Kein Token — OneDrive uebersprungen. Spaeter in .env setzen."
+    if [ -z "$TOKEN_FILE_INPUT" ]; then
+      warn "Uebersprungen — Token spaeter manuell in .env setzen."
       break
     fi
 
-    RECEIVED_LEN="${#RCLONE_TOKEN_INPUT}"
-    echo -e "  ${CYAN}i${NC} Empfangen: ${RECEIVED_LEN} Zeichen"
+    if [ ! -f "$TOKEN_FILE_INPUT" ]; then
+      warn "Datei nicht gefunden: $TOKEN_FILE_INPUT"
+      if [ "$attempt" -lt 3 ]; then
+        echo -e "  Versuch $attempt/3 — Datei anlegen und nochmal, oder Enter leer fuer Skip"
+        continue
+      fi
+      break
+    fi
 
-    if validate_rclone_token "$RCLONE_TOKEN_INPUT"; then
+    # Whitespace-frei in temp schreiben
+    tr -d '[:space:]' < "$TOKEN_FILE_INPUT" > "$TMP_TOKEN_FILE"
+    RECEIVED_LEN="$(wc -c < "$TMP_TOKEN_FILE" | tr -d ' ')"
+    echo -e "  ${CYAN}i${NC} Eingelesen: ${RECEIVED_LEN} Zeichen"
+    echo -e "  ${CYAN}i${NC} Start: $(head -c 30 "$TMP_TOKEN_FILE")..."
+    echo -e "  ${CYAN}i${NC} Ende:  ...$(tail -c 30 "$TMP_TOKEN_FILE")"
+
+    if validate_rclone_token_file "$TMP_TOKEN_FILE"; then
+      RCLONE_TOKEN_INPUT="$(cat "$TMP_TOKEN_FILE")"
       env_set "RCLONE_TOKEN" "$RCLONE_TOKEN_INPUT"
-      # Re-read aus .env zur Verifikation
       SAVED="$(env_get RCLONE_TOKEN)"
       SAVED_LEN="${#SAVED}"
       if [ "$SAVED_LEN" = "$RECEIVED_LEN" ]; then
         ok "OneDrive Token gespeichert (${SAVED_LEN} Zeichen)"
         TOKEN_OK="yes"
       else
-        warn "Verifikation fehlgeschlagen: eingegeben ${RECEIVED_LEN}, gespeichert ${SAVED_LEN}"
+        warn "Verifikation fehlgeschlagen: eingelesen ${RECEIVED_LEN}, gespeichert ${SAVED_LEN}"
       fi
+      # Security: temp-file loeschen (enthaelt refresh_token)
+      rm -f "$TMP_TOKEN_FILE" "$TOKEN_FILE_INPUT"
+      ok "Temp-Dateien mit Token-Inhalt geloescht"
       break
     else
       if [ "$attempt" -lt 3 ]; then
-        warn "Versuch $attempt fehlgeschlagen — nochmal (oder leer + Ctrl+D zum Ueberspringen)"
+        warn "Versuch $attempt/3 fehlgeschlagen — Datei pruefen und nochmal"
       else
-        warn "Token nach 3 Versuchen immer noch nicht valide — spaeter manuell in .env setzen"
+        warn "Token nach 3 Versuchen nicht valide — spaeter manuell in .env setzen"
+        rm -f "$TMP_TOKEN_FILE"
       fi
     fi
   done
@@ -247,6 +276,9 @@ else
     fi
   fi
 fi
+
+# Cleanup temp-file falls noch da
+rm -f "$TMP_TOKEN_FILE"
 
 CURRENT_OD_PATH="$(env_get ONEDRIVE_VAULT_PATH)"
 if [ -n "$(env_get RCLONE_TOKEN)" ] && [ -z "$CURRENT_OD_PATH" ]; then
