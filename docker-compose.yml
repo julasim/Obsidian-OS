@@ -3,6 +3,9 @@ services:
     build: .
     restart: always
     env_file: .env
+    environment:
+      # Agent-State (SYSTEM.md, MEMORY.md, MEMORY_LOGS) getrennt vom User-Vault
+      - SYSTEM_DATA_PATH=/data
     cap_add:
       - SYS_ADMIN
     devices:
@@ -10,7 +13,9 @@ services:
     volumes:
       - ollama-data:/root/.ollama
       - rclone-cache:/tmp/rclone
+      - system-data:/data
 
 volumes:
   ollama-data:
   rclone-cache:
+  system-data:

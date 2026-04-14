@@ -8,6 +8,7 @@ import {
   LOCALE,
   WS_MAX_FILE_CHARS,
   WS_MAX_TOTAL_CHARS,
+  SYSTEM_DATA_PATH,
 } from "../config.js";
 import { workspacePath, ensureDir } from "./helpers.js";
 
@@ -44,11 +45,11 @@ export function estimateTokens(text: string): number {
 // ---- Paths ----
 
 export function getAgentPath(agentName: string): string {
-  return path.join(workspacePath, WORKSPACE_AGENTS_DIR, agentName);
+  return path.join(SYSTEM_DATA_PATH, WORKSPACE_AGENTS_DIR, agentName);
 }
 
 export function listAgents(): string[] {
-  const agentsRoot = path.join(workspacePath, WORKSPACE_AGENTS_DIR);
+  const agentsRoot = path.join(SYSTEM_DATA_PATH, WORKSPACE_AGENTS_DIR);
   if (!fs.existsSync(agentsRoot)) return [];
   try {
     return fs.readdirSync(agentsRoot, { withFileTypes: true })
@@ -65,11 +66,46 @@ export function getWorkspacePath(): string {
   return workspacePath;
 }
 
+export function getSystemDataPath(): string {
+  return SYSTEM_DATA_PATH;
+}
+
 // ---- Workspace Check ----
 
 export function isMainWorkspaceConfigured(): boolean {
-  const systemPath = path.join(workspacePath, WORKSPACE_AGENTS_DIR, "Main", "SYSTEM.md");
+  const systemPath = path.join(SYSTEM_DATA_PATH, WORKSPACE_AGENTS_DIR, "Main", "SYSTEM.md");
   return fs.existsSync(systemPath);
+}
+
+// ---- Migration: Agents/ aus altem Vault-Pfad in SYSTEM_DATA_PATH ----
+
+/**
+ * Einmalige, idempotente Migration: kopiert Agents/ vom User-Vault in den
+ * system-data Pfad. Alt bleibt als Backup erhalten (markiert mit .migrated).
+ * Macht nichts wenn Ziel bereits existiert oder Quelle fehlt.
+ */
+export function migrateAgentsFromVault(): void {
+  if (!workspacePath) return;
+  const oldPath = path.join(workspacePath, WORKSPACE_AGENTS_DIR);
+  const newPath = path.join(SYSTEM_DATA_PATH, WORKSPACE_AGENTS_DIR);
+
+  if (!fs.existsSync(oldPath)) return;       // nichts zu migrieren
+  if (fs.existsSync(newPath)) return;        // bereits migriert
+
+  try {
+    ensureDir(SYSTEM_DATA_PATH);
+    fs.cpSync(oldPath, newPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(oldPath, ".migrated"),
+      new Date().toISOString(),
+      "utf-8",
+    );
+    // eslint-disable-next-line no-console
+    console.log(`[migrate] Agents/ -> ${newPath} kopiert. Alt-Version im Vault bleibt als Backup.`);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[migrate] Agents-Migration fehlgeschlagen:", err);
+  }
 }
 
 // ---- Load Workspace Context ----
@@ -146,7 +182,7 @@ export function inspectAgentWorkspace(agentName: string, mode: "full" | "minimal
 
 export function finalizeMainWorkspace(answers: SetupAnswers): void {
   const agentName = answers.name || "Main";
-  const agentDir = path.join(workspacePath, WORKSPACE_AGENTS_DIR, "Main");
+  const agentDir = path.join(SYSTEM_DATA_PATH, WORKSPACE_AGENTS_DIR, "Main");
   ensureDir(path.join(agentDir, WORKSPACE_LOGS_DIR));
 
   const system = `# ${agentName}

@@ -31,6 +31,12 @@ export const WORKSPACE_PATH = process.env.WORKSPACE_PATH ?? process.env.VAULT_PA
 export const WORKSPACE_AGENTS_DIR = "Agents";
 export const WORKSPACE_LOGS_DIR = "MEMORY_LOGS";
 
+// System-Datenpfad (Agent-State, Memory, Logs) — getrennt vom User-Vault.
+// Default: "./data" lokal; im Docker via ENV auf "/data" (eigenes Volume) gesetzt.
+// Zweck: User-Vault (OneDrive) bleibt frei von Bot-Interna.
+export const SYSTEM_DATA_PATH = process.env.SYSTEM_DATA_PATH
+  ?? path.join(process.cwd(), "data");
+
 // ── Dokumenten-Extraktion ──────────────────────────────────────────────────
 export const EXTRACT_MAX_CHARS = 50_000;
 

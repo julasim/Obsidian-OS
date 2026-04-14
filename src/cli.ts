@@ -89,8 +89,11 @@ function showStatus(): void {
   const vaultPath = env.WORKSPACE_PATH || env.VAULT_PATH;
   const vaultOk = vaultPath ? fs.existsSync(vaultPath) : false;
 
-  const agentDir = vaultPath ? path.join(vaultPath, "Agents", "Main", "SYSTEM.md") : null;
-  const setupDone = agentDir ? fs.existsSync(agentDir) : false;
+  const systemDataPath = env.SYSTEM_DATA_PATH || path.join(ROOT, "data");
+  const systemDataOk = fs.existsSync(systemDataPath);
+
+  const agentFile = path.join(systemDataPath, "Agents", "Main", "SYSTEM.md");
+  const setupDone = fs.existsSync(agentFile);
 
   console.log(`
 ${bold(cyan(`  ${BRAND} Status`))}
@@ -99,6 +102,7 @@ ${bold(cyan(`  ${BRAND} Status`))}
   node_modules     ${hasModules ? green("installiert") : red("fehlt — npm install")}
   Build (dist/)    ${hasDist ? green("kompiliert") : yellow("fehlt — obsidian-os build")}
   Vault            ${vaultOk ? green("erreichbar") : vaultPath ? red("nicht gefunden: " + vaultPath) : red("nicht konfiguriert")}
+  System-Daten     ${systemDataOk ? green(systemDataPath) : yellow(systemDataPath + " (wird beim Start erstellt)")}
   Setup            ${setupDone ? green("abgeschlossen") : yellow("ausstehend — Bot starten")}
   Ollama           ${env.OLLAMA_BASE_URL || dim("http://localhost:11434/v1")}
   Modell           ${env.OLLAMA_MODEL || dim("kimi-k2.5:cloud")}

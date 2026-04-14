@@ -73,6 +73,9 @@ EOF
   fi
 fi
 
+# ── System-Daten-Pfad sicherstellen (Agent-State, Logs) ────────────────────
+mkdir -p "${SYSTEM_DATA_PATH:-/data}"
+
 # ── Bot starten ──────────────────────────────────────────────────────────────
 echo "[entrypoint] Bot wird gestartet..."
 exec node dist/index.js
