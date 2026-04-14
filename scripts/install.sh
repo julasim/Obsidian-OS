@@ -25,13 +25,18 @@ step() { echo -e "\n${BOLD}${CYAN}  ── $1${NC}\n"; }
 
 # Helper: .env Wert lesen/setzen
 env_get() { grep -E "^$1=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true; }
+# env_set nutzt kein sed (bricht bei langen Werten mit /, &, etc.) sondern
+# atomic file rewrite: alte Zeile raus, neue Zeile anhaengen.
 env_set() {
   local key="$1" val="$2" file="$INSTALL_DIR/.env"
-  if grep -qE "^${key}=" "$file" 2>/dev/null; then
-    sed -i "s|^${key}=.*|${key}=${val}|" "$file"
+  local tmp="${file}.tmp"
+  if [ -f "$file" ]; then
+    grep -v "^${key}=" "$file" > "$tmp" || true
   else
-    echo "${key}=${val}" >> "$file"
+    : > "$tmp"
   fi
+  printf '%s=%s\n' "$key" "$val" >> "$tmp"
+  mv "$tmp" "$file"
 }
 
 echo -e "\n${BOLD}${CYAN}  ╔══════════════════════════════════════╗${NC}"
@@ -144,16 +149,35 @@ step "5/6  Obsidian Vault (OneDrive)"
 
 CURRENT_RCLONE_TOKEN="$(env_get RCLONE_TOKEN)"
 
-# Token-Validierung: JSON muss mit { beginnen, mit } enden, refresh_token enthalten
+# Token-Validierung ohne Regex (substring + first/last char — robust bei sehr langen Tokens).
+# Gibt bei Fehler den konkreten Grund auf stderr aus.
 validate_rclone_token() {
   local t="$1"
-  [[ "$t" =~ ^\{.*\}$ ]] || return 1
-  [[ "$t" == *"access_token"* ]] || return 1
-  [[ "$t" == *"refresh_token"* ]] || return 1
+  local len="${#t}"
+  if [ "$len" -lt 200 ]; then
+    echo "  Token zu kurz: $len Zeichen (erwartet >1000)" >&2
+    return 1
+  fi
+  if [ "${t:0:1}" != "{" ]; then
+    echo "  Token beginnt nicht mit { — erstes Zeichen: '${t:0:1}'" >&2
+    return 1
+  fi
+  if [ "${t: -1}" != "}" ]; then
+    echo "  Token endet nicht mit } — letztes Zeichen: '${t: -1}'" >&2
+    return 1
+  fi
+  case "$t" in
+    *access_token*) ;;
+    *) echo "  Token enthaelt kein 'access_token'" >&2; return 1;;
+  esac
+  case "$t" in
+    *refresh_token*) ;;
+    *) echo "  Token enthaelt kein 'refresh_token'" >&2; return 1;;
+  esac
   return 0
 }
 
-if [ -n "$CURRENT_RCLONE_TOKEN" ] && validate_rclone_token "$CURRENT_RCLONE_TOKEN"; then
+if [ -n "$CURRENT_RCLONE_TOKEN" ] && validate_rclone_token "$CURRENT_RCLONE_TOKEN" 2>/dev/null; then
   ok "OneDrive Token vorhanden und valide"
 else
   if [ -n "$CURRENT_RCLONE_TOKEN" ]; then
@@ -175,31 +199,52 @@ else
   echo -e "    (Leer lassen + Ctrl+D zum Ueberspringen.)"
   echo -e ""
 
-  # Multi-line-safe Token-Eingabe: sammelt bis EOF, strippt Whitespace/Newlines
-  RCLONE_TOKEN_RAW="$(cat)"
-  RCLONE_TOKEN_INPUT="$(echo "$RCLONE_TOKEN_RAW" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  # Retry-Loop: bis zu 3 Versuche
+  TOKEN_OK=""
+  for attempt in 1 2 3; do
+    # Multi-line-safe Eingabe: sammelt bis EOF, dann strippt ALLE Whitespaces (inkl. Tabs, Newlines)
+    RCLONE_TOKEN_RAW="$(cat)"
+    RCLONE_TOKEN_INPUT="$(printf '%s' "$RCLONE_TOKEN_RAW" | tr -d '[:space:]')"
 
-  if [ -n "$RCLONE_TOKEN_INPUT" ]; then
+    if [ -z "$RCLONE_TOKEN_INPUT" ]; then
+      warn "Kein Token — OneDrive uebersprungen. Spaeter in .env setzen."
+      break
+    fi
+
+    RECEIVED_LEN="${#RCLONE_TOKEN_INPUT}"
+    echo -e "  ${CYAN}i${NC} Empfangen: ${RECEIVED_LEN} Zeichen"
+
     if validate_rclone_token "$RCLONE_TOKEN_INPUT"; then
       env_set "RCLONE_TOKEN" "$RCLONE_TOKEN_INPUT"
-      ok "OneDrive Token gespeichert ($(echo -n "$RCLONE_TOKEN_INPUT" | wc -c) Zeichen)"
-
-      echo -e ""
-      echo -e "  ${BOLD}Drive-ID:${NC}"
-      echo -e "  Beim ${CYAN}rclone authorize${NC} auf deinem PC wurde auch eine Drive-ID angezeigt."
-      echo -e "  Alternativ findest du sie unter: ${CYAN}OneDrive > Einstellungen > Konto${NC}"
-      read -rp "  Drive-ID (optional, Enter zum Ueberspringen): " DRIVE_ID_INPUT
-      if [ -n "$DRIVE_ID_INPUT" ]; then
-        env_set "ONEDRIVE_DRIVE_ID" "$DRIVE_ID_INPUT"
-        ok "Drive-ID gespeichert"
+      # Re-read aus .env zur Verifikation
+      SAVED="$(env_get RCLONE_TOKEN)"
+      SAVED_LEN="${#SAVED}"
+      if [ "$SAVED_LEN" = "$RECEIVED_LEN" ]; then
+        ok "OneDrive Token gespeichert (${SAVED_LEN} Zeichen)"
+        TOKEN_OK="yes"
+      else
+        warn "Verifikation fehlgeschlagen: eingegeben ${RECEIVED_LEN}, gespeichert ${SAVED_LEN}"
       fi
+      break
     else
-      warn "Token sieht unvollstaendig aus — ${RED}NICHT gespeichert${NC}."
-      echo -e "  ${YELLOW}Erwartet: {...} mit access_token UND refresh_token${NC}"
-      echo -e "  ${YELLOW}Spaeter nochmal ausfuehren oder .env manuell editieren.${NC}"
+      if [ "$attempt" -lt 3 ]; then
+        warn "Versuch $attempt fehlgeschlagen — nochmal (oder leer + Ctrl+D zum Ueberspringen)"
+      else
+        warn "Token nach 3 Versuchen immer noch nicht valide — spaeter manuell in .env setzen"
+      fi
     fi
-  else
-    warn "Kein Token — OneDrive uebersprungen. Spaeter in .env setzen."
+  done
+
+  if [ -n "$TOKEN_OK" ]; then
+    echo -e ""
+    echo -e "  ${BOLD}Drive-ID:${NC}"
+    echo -e "  Beim ${CYAN}rclone authorize${NC} auf deinem PC wurde auch eine Drive-ID angezeigt."
+    echo -e "  Alternativ findest du sie unter: ${CYAN}OneDrive > Einstellungen > Konto${NC}"
+    read -rp "  Drive-ID (optional, Enter zum Ueberspringen): " DRIVE_ID_INPUT
+    if [ -n "$DRIVE_ID_INPUT" ]; then
+      env_set "ONEDRIVE_DRIVE_ID" "$DRIVE_ID_INPUT"
+      ok "Drive-ID gespeichert"
+    fi
   fi
 fi
 

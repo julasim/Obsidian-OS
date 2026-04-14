@@ -19,11 +19,17 @@ done
 if [ -n "${RCLONE_TOKEN:-}" ]; then
   echo "[entrypoint] OneDrive wird konfiguriert..."
 
-  # Pre-flight: Token muss vollstaendiges JSON mit refresh_token sein
-  if [[ ! "${RCLONE_TOKEN}" =~ ^\{.*\}$ ]] \
-     || [[ "${RCLONE_TOKEN}" != *"access_token"* ]] \
-     || [[ "${RCLONE_TOKEN}" != *"refresh_token"* ]]; then
-    echo "[entrypoint] FEHLER: RCLONE_TOKEN ist unvollstaendig (Laenge: ${#RCLONE_TOKEN} Zeichen)"
+  # Pre-flight: Token muss vollstaendiges JSON mit refresh_token sein (substring-checks statt regex)
+  TOKEN_VALID=1
+  TOKEN_LEN="${#RCLONE_TOKEN}"
+  [ "$TOKEN_LEN" -lt 200 ] && TOKEN_VALID=0
+  [ "${RCLONE_TOKEN:0:1}" != "{" ] && TOKEN_VALID=0
+  [ "${RCLONE_TOKEN: -1}" != "}" ] && TOKEN_VALID=0
+  case "$RCLONE_TOKEN" in *access_token*) ;; *) TOKEN_VALID=0;; esac
+  case "$RCLONE_TOKEN" in *refresh_token*) ;; *) TOKEN_VALID=0;; esac
+
+  if [ "$TOKEN_VALID" != "1" ]; then
+    echo "[entrypoint] FEHLER: RCLONE_TOKEN ist unvollstaendig (Laenge: ${TOKEN_LEN} Zeichen)"
     echo "[entrypoint] Erwartet: {\"access_token\":\"...\",\"refresh_token\":\"...\",...}"
     echo "[entrypoint] Vermutlich beim Paste abgeschnitten — install.sh neu ausfuehren oder .env manuell korrigieren"
     echo "[entrypoint] OneDrive Mount uebersprungen — Bot startet ohne Vault"
