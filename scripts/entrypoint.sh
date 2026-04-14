@@ -19,29 +19,7 @@ done
 if [ -n "${RCLONE_TOKEN:-}" ]; then
   echo "[entrypoint] OneDrive wird konfiguriert..."
 
-  # Pre-flight: Token muss vollstaendiges JSON mit refresh_token sein.
-  # Schreibt in temp file und prueft via grep — zuverlaessiger als bash string-ops bei >2KB.
-  TMP_CHECK=/tmp/rclone-token-check
-  printf '%s' "$RCLONE_TOKEN" > "$TMP_CHECK"
-  TOKEN_LEN="$(wc -c < "$TMP_CHECK" | tr -d ' ')"
-  TOKEN_VALID=1
-  [ "$TOKEN_LEN" -lt 200 ] && TOKEN_VALID=0
-  [ "$(head -c 1 "$TMP_CHECK")" != "{" ] && TOKEN_VALID=0
-  [ "$(tail -c 1 "$TMP_CHECK")" != "}" ] && TOKEN_VALID=0
-  grep -q '"access_token"' "$TMP_CHECK" || TOKEN_VALID=0
-  grep -q '"refresh_token"' "$TMP_CHECK" || TOKEN_VALID=0
-  rm -f "$TMP_CHECK"
-
-  if [ "$TOKEN_VALID" != "1" ]; then
-    echo "[entrypoint] FEHLER: RCLONE_TOKEN ist unvollstaendig (Laenge: ${TOKEN_LEN} Zeichen)"
-    echo "[entrypoint] Erwartet: {\"access_token\":\"...\",\"refresh_token\":\"...\",...}"
-    echo "[entrypoint] Vermutlich beim Paste abgeschnitten — install.sh neu ausfuehren oder .env manuell korrigieren"
-    echo "[entrypoint] OneDrive Mount uebersprungen — Bot startet ohne Vault"
-    # Bot trotzdem starten, damit Fehlermeldung sichtbar bleibt
-    echo "[entrypoint] Bot wird gestartet..."
-    mkdir -p "${SYSTEM_DATA_PATH:-/data}"
-    exec node dist/index.js
-  fi
+  echo "[entrypoint] RCLONE_TOKEN Laenge: ${#RCLONE_TOKEN} Zeichen"
 
   mkdir -p /vault /root/.config/rclone
 

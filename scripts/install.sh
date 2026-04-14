@@ -149,136 +149,38 @@ step "5/6  Obsidian Vault (OneDrive)"
 
 CURRENT_RCLONE_TOKEN="$(env_get RCLONE_TOKEN)"
 
-# Token-Validierung via grep (zuverlaessiger als bash-case bei >2KB-Strings).
-# Erwartet Token als Datei-Pfad. Gibt bei Fehler den konkreten Grund auf stderr aus.
-validate_rclone_token_file() {
-  local file="$1"
-  if [ ! -f "$file" ]; then
-    echo "  Datei nicht gefunden: $file" >&2
-    return 1
-  fi
-  local len
-  len="$(wc -c < "$file" | tr -d ' ')"
-  if [ "$len" -lt 200 ]; then
-    echo "  Token zu kurz: $len Zeichen (erwartet >1000)" >&2
-    return 1
-  fi
-  local first last
-  first="$(head -c 1 "$file")"
-  last="$(tail -c 1 "$file")"
-  if [ "$first" != "{" ]; then
-    echo "  Token beginnt nicht mit { — erstes Zeichen: '$first'" >&2
-    return 1
-  fi
-  if [ "$last" != "}" ]; then
-    echo "  Token endet nicht mit } — letztes Zeichen: '$last'" >&2
-    return 1
-  fi
-  if ! grep -q '"access_token"' "$file"; then
-    echo "  Token enthaelt kein \"access_token\"" >&2
-    return 1
-  fi
-  if ! grep -q '"refresh_token"' "$file"; then
-    echo "  Token enthaelt kein \"refresh_token\"" >&2
-    return 1
-  fi
-  return 0
-}
-
-# Schreibt aktuellen Token in temp file + prueft
-TMP_TOKEN_FILE="/tmp/obsidian-os-token.json"
-TOKEN_OK=""
-
-if [ -n "$CURRENT_RCLONE_TOKEN" ]; then
-  printf '%s' "$CURRENT_RCLONE_TOKEN" | tr -d '[:space:]' > "$TMP_TOKEN_FILE"
-  if validate_rclone_token_file "$TMP_TOKEN_FILE" 2>/dev/null; then
-    ok "OneDrive Token vorhanden und valide"
-    TOKEN_OK="yes"
-  else
-    warn "Gespeicherter OneDrive Token ist unvollstaendig — bitte neu eingeben."
-  fi
-fi
-
-if [ -z "$TOKEN_OK" ]; then
+if [ -n "$CURRENT_RCLONE_TOKEN" ] && [ "${#CURRENT_RCLONE_TOKEN}" -gt 200 ]; then
+  ok "OneDrive Token vorhanden (${#CURRENT_RCLONE_TOKEN} Zeichen)"
+else
   echo -e "  Der Vault wird via OneDrive in den Container gemountet."
   echo -e ""
-  echo -e "  ${BOLD}1. Token auf deinem PC erzeugen:${NC}"
-  echo -e "     ${CYAN}rclone authorize \"onedrive\"${NC}"
-  echo -e "     Im Browser bei Microsoft anmelden. rclone zeigt einen JSON-Block ${CYAN}{...}${NC}"
+  echo -e "  ${BOLD}So bekommst du das Token:${NC}"
+  echo -e "    1. Auf deinem ${CYAN}PC/Mac${NC} rclone installieren: ${CYAN}https://rclone.org/install/${NC}"
+  echo -e "    2. Ausfuehren: ${CYAN}rclone authorize \"onedrive\"${NC}"
+  echo -e "    3. Im Browser bei Microsoft anmelden"
+  echo -e "    4. rclone zeigt einen JSON-Block ${CYAN}{...}${NC} an — den KOMPLETT kopieren"
   echo -e ""
-  echo -e "  ${BOLD}2. Token in eine Datei auf DIESEM Server schreiben:${NC}"
-  echo -e "     Oeffne ein ${CYAN}zweites Terminal-Fenster${NC} und fuehre aus:"
-  echo -e "       ${CYAN}nano /tmp/rclone-token.json${NC}"
-  echo -e "     JSON komplett einfuegen, mit ${CYAN}Ctrl+O Enter Ctrl+X${NC} speichern."
-  echo -e ""
-  echo -e "  ${BOLD}3. Pfad hier eingeben${NC} (oder leer lassen zum Ueberspringen):"
+  echo -e "  ${BOLD}Token einfuegen:${NC} Paste, dann ${CYAN}Enter${NC} + ${CYAN}Ctrl+D${NC}. (Leer + Ctrl+D = Skip)"
   echo -e ""
 
-  for attempt in 1 2 3; do
-    read -rp "  Token-Datei [/tmp/rclone-token.json]: " TOKEN_FILE_INPUT
-    TOKEN_FILE_INPUT="${TOKEN_FILE_INPUT:-/tmp/rclone-token.json}"
+  RCLONE_TOKEN_RAW="$(cat)"
+  RCLONE_TOKEN_INPUT="$(printf '%s' "$RCLONE_TOKEN_RAW" | tr -d '[:space:]')"
 
-    if [ -z "$TOKEN_FILE_INPUT" ]; then
-      warn "Uebersprungen — Token spaeter manuell in .env setzen."
-      break
-    fi
+  if [ -z "$RCLONE_TOKEN_INPUT" ]; then
+    warn "Kein Token — OneDrive uebersprungen. Spaeter in .env setzen."
+  else
+    env_set "RCLONE_TOKEN" "$RCLONE_TOKEN_INPUT"
+    ok "OneDrive Token gespeichert (${#RCLONE_TOKEN_INPUT} Zeichen)"
 
-    if [ ! -f "$TOKEN_FILE_INPUT" ]; then
-      warn "Datei nicht gefunden: $TOKEN_FILE_INPUT"
-      if [ "$attempt" -lt 3 ]; then
-        echo -e "  Versuch $attempt/3 — Datei anlegen und nochmal, oder Enter leer fuer Skip"
-        continue
-      fi
-      break
-    fi
-
-    # Whitespace-frei in temp schreiben
-    tr -d '[:space:]' < "$TOKEN_FILE_INPUT" > "$TMP_TOKEN_FILE"
-    RECEIVED_LEN="$(wc -c < "$TMP_TOKEN_FILE" | tr -d ' ')"
-    echo -e "  ${CYAN}i${NC} Eingelesen: ${RECEIVED_LEN} Zeichen"
-    echo -e "  ${CYAN}i${NC} Start: $(head -c 30 "$TMP_TOKEN_FILE")..."
-    echo -e "  ${CYAN}i${NC} Ende:  ...$(tail -c 30 "$TMP_TOKEN_FILE")"
-
-    if validate_rclone_token_file "$TMP_TOKEN_FILE"; then
-      RCLONE_TOKEN_INPUT="$(cat "$TMP_TOKEN_FILE")"
-      env_set "RCLONE_TOKEN" "$RCLONE_TOKEN_INPUT"
-      SAVED="$(env_get RCLONE_TOKEN)"
-      SAVED_LEN="${#SAVED}"
-      if [ "$SAVED_LEN" = "$RECEIVED_LEN" ]; then
-        ok "OneDrive Token gespeichert (${SAVED_LEN} Zeichen)"
-        TOKEN_OK="yes"
-      else
-        warn "Verifikation fehlgeschlagen: eingelesen ${RECEIVED_LEN}, gespeichert ${SAVED_LEN}"
-      fi
-      # Security: temp-file loeschen (enthaelt refresh_token)
-      rm -f "$TMP_TOKEN_FILE" "$TOKEN_FILE_INPUT"
-      ok "Temp-Dateien mit Token-Inhalt geloescht"
-      break
-    else
-      if [ "$attempt" -lt 3 ]; then
-        warn "Versuch $attempt/3 fehlgeschlagen — Datei pruefen und nochmal"
-      else
-        warn "Token nach 3 Versuchen nicht valide — spaeter manuell in .env setzen"
-        rm -f "$TMP_TOKEN_FILE"
-      fi
-    fi
-  done
-
-  if [ -n "$TOKEN_OK" ]; then
     echo -e ""
-    echo -e "  ${BOLD}Drive-ID:${NC}"
-    echo -e "  Beim ${CYAN}rclone authorize${NC} auf deinem PC wurde auch eine Drive-ID angezeigt."
-    echo -e "  Alternativ findest du sie unter: ${CYAN}OneDrive > Einstellungen > Konto${NC}"
-    read -rp "  Drive-ID (optional, Enter zum Ueberspringen): " DRIVE_ID_INPUT
+    echo -e "  ${BOLD}Drive-ID${NC} (optional, Enter = ueberspringen — wird dann automatisch erkannt):"
+    read -rp "  Drive-ID: " DRIVE_ID_INPUT
     if [ -n "$DRIVE_ID_INPUT" ]; then
       env_set "ONEDRIVE_DRIVE_ID" "$DRIVE_ID_INPUT"
       ok "Drive-ID gespeichert"
     fi
   fi
 fi
-
-# Cleanup temp-file falls noch da
-rm -f "$TMP_TOKEN_FILE"
 
 CURRENT_OD_PATH="$(env_get ONEDRIVE_VAULT_PATH)"
 if [ -n "$(env_get RCLONE_TOKEN)" ] && [ -z "$CURRENT_OD_PATH" ]; then
