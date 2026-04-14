@@ -3,13 +3,29 @@ import path from "path";
 import { WORKSPACE_PATH, DAILY_NOTES_DIR, LOCALE, TIMEZONE } from "../config.js";
 import { ensureDir } from "./helpers.js";
 
+/** Resolve DAILY_NOTES_DIR case-insensitively (Daily/daily/DAILY all work) */
+function resolveDailyDir(): string {
+  const direct = path.join(WORKSPACE_PATH, DAILY_NOTES_DIR);
+  if (fs.existsSync(direct)) return direct;
+  try {
+    const entries = fs.readdirSync(WORKSPACE_PATH, { withFileTypes: true });
+    const match = entries.find(
+      (e) => e.isDirectory() && e.name.toLowerCase() === DAILY_NOTES_DIR.toLowerCase(),
+    );
+    if (match) return path.join(WORKSPACE_PATH, match.name);
+  } catch {
+    /* workspace not readable */
+  }
+  return direct; // fallback to configured path (will be created on write)
+}
+
 /** Returns absolute path for a daily note */
 export function dailyNotePath(date?: Date): string {
   const d = date ?? new Date();
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return path.join(WORKSPACE_PATH, DAILY_NOTES_DIR, `${year}-${month}-${day}.md`);
+  return path.join(resolveDailyDir(), `${year}-${month}-${day}.md`);
 }
 
 function formatDate(date: Date): string {
@@ -117,7 +133,7 @@ export function appendToDailyNote(entry: string, section?: string): string {
 
 /** List daily note filenames, newest first */
 export function listDailyNotes(limit?: number): string[] {
-  const dir = path.join(WORKSPACE_PATH, DAILY_NOTES_DIR);
+  const dir = resolveDailyDir();
   if (!fs.existsSync(dir)) return [];
   try {
     const files = fs
@@ -131,9 +147,19 @@ export function listDailyNotes(limit?: number): string[] {
   }
 }
 
-/** Read a specific daily note by date string YYYY-MM-DD */
+/** Read a specific daily note by date string YYYY-MM-DD (matches exact or YYYY-MM-DD_*.md) */
 export function readDailyNote(dateStr: string): string | null {
-  const fp = path.join(WORKSPACE_PATH, DAILY_NOTES_DIR, `${dateStr}.md`);
-  if (!fs.existsSync(fp)) return null;
-  return fs.readFileSync(fp, "utf-8");
+  const dir = resolveDailyDir();
+  // Exact match first: YYYY-MM-DD.md
+  const exact = path.join(dir, `${dateStr}.md`);
+  if (fs.existsSync(exact)) return fs.readFileSync(exact, "utf-8");
+  // Fallback: match any file starting with the date (e.g. "2026-04-08_zimmer-umsiedeln.md")
+  if (!fs.existsSync(dir)) return null;
+  try {
+    const match = fs.readdirSync(dir).find((f) => f.startsWith(dateStr) && f.endsWith(".md"));
+    if (match) return fs.readFileSync(path.join(dir, match), "utf-8");
+  } catch {
+    /* unreadable */
+  }
+  return null;
 }
