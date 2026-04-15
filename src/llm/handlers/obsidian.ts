@@ -27,11 +27,26 @@ export const obsidianSchemas: OpenAI.Chat.ChatCompletionTool[] = [
     function: {
       name: "daily_note_lesen",
       description:
-        "Liest die Daily Note fuer ein Datum. Ohne Datum wird das heutige Daily Note zurueckgegeben (und erstellt falls noetig). Format: YYYY-MM-DD.",
+        "Liest EINE Daily Note fuer ein Datum. Ohne Datum wird das heutige Daily Note zurueckgegeben (und erstellt falls noetig). Format: YYYY-MM-DD. Fuer eine Liste aller vorhandenen Daily Notes stattdessen daily_notes_auflisten verwenden.",
       parameters: {
         type: "object",
         properties: {
           datum: { type: "string", description: "Datum im Format YYYY-MM-DD (Standard: heute)" },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "daily_notes_auflisten",
+      description:
+        "Listet alle vorhandenen Daily Notes im Daily-Ordner auf (neueste zuerst). Nutze das wenn der User fragt was im Daily-Ordner ist, welche Dailies existieren o.ae. — NICHT daily_note_lesen, das liest nur eine einzelne Note.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Maximale Anzahl (Standard: 30)" },
         },
         required: [],
       },
@@ -167,6 +182,13 @@ export const obsidianHandlers: HandlerMap = {
 
   daily_note_eintrag: async (args) => {
     return appendToDailyNote(String(args.text), args.abschnitt ? String(args.abschnitt) : undefined);
+  },
+
+  daily_notes_auflisten: async (args) => {
+    const limit = args.limit !== undefined ? Number(args.limit) : undefined;
+    const files = listDailyNotes(limit);
+    if (!files.length) return "Keine Daily Notes vorhanden.";
+    return `${files.length} Daily Note(s):\n${files.map((f) => `\u{1F4C4} ${f}`).join("\n")}`;
   },
 
   notiz_aus_vorlage: async (args) => {
