@@ -8,8 +8,8 @@ import {
   TIMEZONE,
 } from "../config.js";
 
-// Haupt-Client: OpenAI-kompatible API (Ollama Cloud, OpenAI, OpenRouter, lokales Ollama)
-const apiKey = process.env.OLLAMA_API_KEY || process.env.OPENAI_API_KEY || "ollama";
+// Haupt-Client: Ollama (lokal oder Cloud via :cloud-Suffix)
+const apiKey = process.env.OLLAMA_API_KEY || "ollama";
 export const client = new OpenAI({ baseURL: OLLAMA_BASE_URL, apiKey });
 
 let MODEL = DEFAULT_MODEL;
