@@ -48,6 +48,9 @@ export async function processAgent(
   const activeModel = mode === "minimal" ? SUBAGENT_MODEL : getAgentModel(agentName);
   let totalChars = messages.reduce((s, m) => s + JSON.stringify(m).length, 0);
 
+  let enforcementRetries = 0;
+  const MAX_ENFORCEMENT_RETRIES = 2;
+
   for (let i = 0; i < MAX_TOOL_ROUNDS; i++) {
     const response = await client.chat.completions.create({
       model: activeModel,
@@ -56,7 +59,9 @@ export async function processAgent(
       tool_choice: "required",
     });
 
-    const reply = response.choices[0]?.message;
+    const choice = response.choices[0];
+    const reply = choice?.message;
+    const finishReason = choice?.finish_reason;
     if (!reply) {
       logError(`[${agentName}]`, "API returned empty choices");
       break;
@@ -64,11 +69,35 @@ export async function processAgent(
     messages.push(reply);
     totalChars += JSON.stringify(reply).length;
 
-    // Fallback: Modell hat keinen Tool-Call gemacht (sollte bei "required" nicht passieren)
+    // Modell hat tool_choice="required" ignoriert → Diagnose + harter Retry
     if (!reply.tool_calls || reply.tool_calls.length === 0) {
-      const antwort = reply.content ?? "Erledigt.";
+      const contentPreview = (reply.content ?? "")
+        .slice(0, 200)
+        .replace(/\s+/g, " ")
+        .trim();
+      logInfo(
+        `[${agentName}] Kein Tool (Runde ${i + 1}, finish=${finishReason}, retries=${enforcementRetries}): "${contentPreview}"`,
+      );
+
+      // Retry: Modell explizit zum Tool-Call zwingen
+      if (enforcementRetries < MAX_ENFORCEMENT_RETRIES) {
+        enforcementRetries++;
+        messages.push({
+          role: "user",
+          content:
+            "REGELVERSTOSS: Du hast keinen Tool-Call gemacht. Freier Text ohne Tool ist VERBOTEN. " +
+            "Fuer Chat-Antworten: antworten(text=...). Fuer Aktionen: aufgabe_speichern / notiz_speichern / termin_speichern / vault_suchen usw. " +
+            "Antworte jetzt NEU und nutze ein Tool. KEIN Fliesstext.",
+        });
+        continue;
+      }
+
+      // Nach zwei fehlgeschlagenen Retries: content als Antwort durchreichen (Notfall-Fallback)
+      const antwort = reply.content ?? "Ich konnte deine Anfrage nicht vollstaendig bearbeiten.";
       appendAgentConversation(agentName, userMessage, antwort);
-      logInfo(`[${agentName}] Antwort ohne Tool (Runde ${i + 1}, ${antwort.length} Z)`);
+      logInfo(
+        `[${agentName}] Final ohne Tool-Call nach ${enforcementRetries} Retries (${antwort.length} Z)`,
+      );
       if (shouldCompact(agentName)) runCompaction(agentName).catch((err) => logError("Compaction", err));
       return antwort;
     }
