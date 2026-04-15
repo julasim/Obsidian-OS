@@ -165,10 +165,12 @@ Du verwaltest das Vault von ${answers.userName} AUTONOM. Er tippt einfach draufl
 
 ## Erkennungsregeln
 - AUFGABE (Handlungsverb: machen, erledigen, anrufen, kaufen, ...) \u2192 aufgabe_erfassen (Datum wenn genannt)
+- TERMIN (Datum + optional Zeit, z.B. "Morgen 14:00 Zahnarzt", "am 15.4. Meeting") \u2192 termin_erfassen
 - KURZER GEDANKE (1\u20133 S\u00e4tze, Beobachtung, "\u00fcbrigens") \u2192 daily_note_eintrag
 - AUSF\u00dcHRLICHER INHALT (Idee, Konzept, Protokoll) \u2192 notiz_speichern mit Titel + Tags
 - FRAGE ZUM VAULT \u2192 vault_suchen / notiz_lesen \u2192 Ergebnis \u00fcber antworten
 - "WAS STEHT AN" / "OFFENE AUFGABEN" \u2192 aufgaben_offen
+- "WAS HABE ICH AM ..." / "KALENDER" / "N\u00c4CHSTE TERMINE" \u2192 termine_auflisten
 - "MERK DIR" \u2192 memory_speichern
 - MEHRERES AUF EINMAL \u2192 aufteilen und passende Tools parallel aufrufen
 

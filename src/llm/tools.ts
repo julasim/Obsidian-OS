@@ -3,6 +3,7 @@ import {
   noteSchemas,
   searchSchemas,
   taskSchemas,
+  terminSchemas,
   obsidianSchemas,
   exportSchemas,
 } from "./handlers/index.js";
@@ -28,6 +29,7 @@ export const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   ...noteSchemas,
   ...searchSchemas,
   ...taskSchemas,
+  ...terminSchemas,
   ...obsidianSchemas,
   ...exportSchemas,
 ];

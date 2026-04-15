@@ -1,5 +1,6 @@
 export * from "./notes.js";
 export * from "./aufgaben.js";
+export * from "./termine.js";
 export * from "./files.js";
 export * from "./fileops.js";
 export * from "./search.js";
