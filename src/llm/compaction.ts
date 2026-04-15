@@ -15,22 +15,40 @@ async function summarizeLog(text: string): Promise<string> {
   return response.choices[0]?.message.content ?? "";
 }
 
-export async function runCompaction(agentName: string): Promise<void> {
-  const toSummarize = getLogForCompaction(agentName);
-  if (!toSummarize) return;
-  logInfo(`[${agentName}] Compaction gestartet`);
-  const summary = await summarizeLog(toSummarize);
-  if (summary) {
+/**
+ * Laeuft die Log-Compaction. Fehler werden geloggt, nicht geworfen — der
+ * aufrufende Pfad (processAgent) soll nicht an Compaction-Problemen scheitern.
+ * Rueckgabe: true bei Erfolg oder "nichts zu tun", false bei Fehler.
+ */
+export async function runCompaction(agentName: string): Promise<boolean> {
+  try {
+    const toSummarize = getLogForCompaction(agentName);
+    if (!toSummarize) return true;
+    logInfo(`[${agentName}] Compaction gestartet`);
+    const summary = await summarizeLog(toSummarize);
+    if (!summary) {
+      logError(`[${agentName}] Compaction`, "Leere Zusammenfassung vom LLM");
+      return false;
+    }
     writeCompactedLog(agentName, summary);
     logInfo(`[${agentName}] Compaction abgeschlossen`);
+    return true;
+  } catch (err) {
+    logError(`[${agentName}] Compaction`, err);
+    return false;
   }
 }
 
 export async function compactNow(agentName: string): Promise<string> {
-  const toSummarize = getLogForCompaction(agentName);
-  if (!toSummarize) return "Tageslog ist noch klein – kein Komprimieren noetig.";
-  const summary = await summarizeLog(toSummarize);
-  if (!summary) return "Zusammenfassung fehlgeschlagen.";
-  writeCompactedLog(agentName, summary);
-  return `\u2705 Log komprimiert.\n\nZusammenfassung:\n${summary}`;
+  try {
+    const toSummarize = getLogForCompaction(agentName);
+    if (!toSummarize) return "Tageslog ist noch klein – kein Komprimieren noetig.";
+    const summary = await summarizeLog(toSummarize);
+    if (!summary) return "Zusammenfassung fehlgeschlagen.";
+    writeCompactedLog(agentName, summary);
+    return `\u2705 Log komprimiert.\n\nZusammenfassung:\n${summary}`;
+  } catch (err) {
+    logError(`[${agentName}] Compaction`, err);
+    return `Fehler beim Komprimieren: ${err}`;
+  }
 }

@@ -1,6 +1,6 @@
 import { Bot, InputFile } from "grammy";
 import { saveNote, isMainWorkspaceConfigured } from "./workspace/index.js";
-import { processMessage, processBtw } from "./llm/runtime.js";
+import { processMessage } from "./llm/runtime.js";
 import { processSetup, isSetupActive, activateSetup } from "./llm/setup.js";
 import { setReplyContext, setFileSendContext } from "./llm/executor.js";
 import { logError } from "./logger.js";
@@ -12,20 +12,9 @@ import type { Context } from "grammy";
 import {
   handleHilfe,
   handleStatus,
-  handleSprache,
   handleKontext,
   handleKompakt,
   handleNeu,
-  handleCommands,
-  handleWhoami,
-  handleExportSession,
-  handleModel,
-  handleFast,
-  handleHeute,
-  handleDaily,
-  handleConfig,
-  handleRestart,
-  handleLogs,
 } from "./commands/system.js";
 
 function withTyping(ctx: Context): { stop: () => void } {
@@ -62,21 +51,10 @@ export function createBot(token: string): Bot {
   // Commands
   bot.command("start", (ctx) => handleHilfe(ctx));
   bot.command("hilfe", (ctx) => handleHilfe(ctx));
-  bot.command("commands", (ctx) => handleCommands(ctx));
   bot.command("status", (ctx) => handleStatus(ctx));
   bot.command("kontext", (ctx) => handleKontext(ctx));
   bot.command("kompakt", (ctx) => handleKompakt(ctx));
   bot.command("neu", (ctx) => handleNeu(ctx));
-  bot.command("whoami", (ctx) => handleWhoami(ctx));
-  bot.command("export", (ctx) => handleExportSession(ctx));
-  bot.command("model", (ctx) => handleModel(ctx, ctx.match));
-  bot.command("fast", (ctx) => handleFast(ctx));
-  bot.command("sprache", (ctx) => handleSprache(ctx, ctx.match));
-  bot.command("heute", (ctx) => handleHeute(ctx));
-  bot.command("daily", (ctx) => handleDaily(ctx));
-  bot.command("config", (ctx) => handleConfig(ctx));
-  bot.command("restart", (ctx) => handleRestart(ctx));
-  bot.command("logs", (ctx) => handleLogs(ctx, ctx.match));
 
   // Text messages -> LLM
   bot.on("message:text", (ctx) => {
@@ -93,21 +71,6 @@ export function createBot(token: string): Bot {
         } catch (err) {
           logError("Setup", err);
           await ctx.reply("Fehler beim Setup \u2014 ist Ollama erreichbar?");
-        } finally {
-          typing.stop();
-        }
-        return;
-      }
-
-      // /btw — direct answer without tools
-      const btwMatch = raw.match(/^\/btw\s+(.+)/is);
-      if (btwMatch) {
-        const typing = withTyping(ctx);
-        try {
-          const antwort = await processBtw(btwMatch[1].trim());
-          await safeReply(ctx, antwort);
-        } catch {
-          await ctx.reply("Fehler bei /btw \u2014 ist Ollama erreichbar?");
         } finally {
           typing.stop();
         }

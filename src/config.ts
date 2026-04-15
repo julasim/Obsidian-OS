@@ -14,7 +14,6 @@ export const WHISPER_LANG = process.env.WHISPER_LANG || "de";
 
 // ── Agent ────────────────────────────────────────────────────────────────────
 export const MAX_TOOL_ROUNDS = 5;
-export const MAX_SPAWN_DEPTH = 2;
 export const getAgentModel = (_name: string) => DEFAULT_MODEL;
 
 // ── Ged\u00e4chtnis ────────────────────────────────────────────────────────────────
@@ -66,6 +65,3 @@ export const SKIP_DIRS = new Set([".obsidian", ".git", ".trash", "node_modules",
 
 // ── Logging ──────────────────────────────────────────────────────────────────
 export const MAX_LOG_LINES = 500;
-export const LOG_DEFAULT_LINES = 20;
-export const LOG_MAX_DISPLAY_LINES = 50;
-export const LOG_DISPLAY_MAX_CHARS = 3_800;

@@ -1,6 +1,5 @@
 import fs from "fs";
-import path from "path";
-import { workspacePath, safePath, walkMarkdownFiles } from "./helpers.js";
+import { safePath } from "./helpers.js";
 
 /** Parse YAML frontmatter block from markdown content */
 export function parseFrontmatter(content: string): { data: Record<string, unknown>; body: string } {
@@ -69,7 +68,7 @@ export function stringifyFrontmatter(data: Record<string, unknown>, body: string
   return lines.join("\n");
 }
 
-/** Update or add a frontmatter field in a file */
+/** Update or add a frontmatter field in a file. Returns false if the file doesn't exist. */
 export function upsertFrontmatterField(filepath: string, key: string, value: unknown): boolean {
   const absPath = safePath(filepath);
   if (!absPath || !fs.existsSync(absPath)) return false;
@@ -78,45 +77,4 @@ export function upsertFrontmatterField(filepath: string, key: string, value: unk
   data[key] = value;
   fs.writeFileSync(absPath, stringifyFrontmatter(data, body), "utf-8");
   return true;
-}
-
-/** Get all tags from a file (frontmatter tags + inline #hashtags) */
-export function getFileTags(filepath: string): string[] {
-  if (!fs.existsSync(filepath)) return [];
-  try {
-    const content = fs.readFileSync(filepath, "utf-8");
-    const { data, body } = parseFrontmatter(content);
-    const tags: Set<string> = new Set();
-
-    // Frontmatter tags
-    if (Array.isArray(data.tags)) {
-      for (const t of data.tags as string[]) tags.add(String(t).toLowerCase());
-    } else if (typeof data.tags === "string") {
-      tags.add((data.tags as string).toLowerCase());
-    }
-
-    // Inline #hashtags in body
-    const hashtagMatches = body.matchAll(/#(\w+)/g);
-    for (const m of hashtagMatches) tags.add(m[1].toLowerCase());
-
-    return [...tags];
-  } catch {
-    return [];
-  }
-}
-
-/** Find all vault files that have a given tag */
-export function findByTag(tag: string, subdir?: string): string[] {
-  const normalizedTag = tag.toLowerCase().replace(/^#/, "");
-  const searchRoot = subdir ? path.join(workspacePath, subdir) : workspacePath;
-  const results: string[] = [];
-
-  walkMarkdownFiles(searchRoot, (full) => {
-    const tags = getFileTags(full);
-    if (tags.includes(normalizedTag)) {
-      results.push(path.relative(workspacePath, full).replace(/\\/g, "/"));
-    }
-  });
-
-  return results;
 }

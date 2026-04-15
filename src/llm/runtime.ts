@@ -1,13 +1,12 @@
 import type OpenAI from "openai";
-import { client, buildDateLine, getModel } from "./client.js";
+import { client, buildDateLine } from "./client.js";
 import { TOOLS } from "./tools.js";
-import { executeTool, setCurrentDepth, registerProcessAgent } from "./executor.js";
+import { executeTool } from "./executor.js";
 import { runCompaction } from "./compaction.js";
 import { loadAgentWorkspace, appendAgentConversation, loadAgentHistory, shouldCompact } from "../workspace/index.js";
 import {
   MAX_HISTORY_CHARS,
   MAX_TOOL_ROUNDS,
-  MAX_SPAWN_DEPTH,
   SUBAGENT_MODEL,
   getAgentModel,
   MESSAGE_PREVIEW_LENGTH,
@@ -22,10 +21,7 @@ export async function processAgent(
   agentName: string,
   userMessage: string,
   mode: "full" | "minimal" = "full",
-  depth = 0,
 ): Promise<string> {
-  if (depth > MAX_SPAWN_DEPTH) return `[${agentName}] Maximale Spawn-Tiefe erreicht (depth=${depth}).`;
-  setCurrentDepth(depth);
   const preview =
     userMessage.length > MESSAGE_PREVIEW_LENGTH ? userMessage.slice(0, MESSAGE_PREVIEW_LENGTH) + "\u2026" : userMessage;
   logInfo(`[${agentName}] Start — "${preview}"`);
@@ -86,7 +82,7 @@ export async function processAgent(
           role: "user",
           content:
             "REGELVERSTOSS: Du hast keinen Tool-Call gemacht. Freier Text ohne Tool ist VERBOTEN. " +
-            "Fuer Chat-Antworten: antworten(text=...). Fuer Aktionen: aufgabe_speichern / notiz_speichern / termin_speichern / vault_suchen usw. " +
+            "Fuer Chat-Antworten: antworten(text=...). Fuer Aktionen: notiz_speichern / vault_suchen usw. " +
             "Antworte jetzt NEU und nutze ein Tool. KEIN Fliesstext.",
         });
         continue;
@@ -98,7 +94,7 @@ export async function processAgent(
       logInfo(
         `[${agentName}] Final ohne Tool-Call nach ${enforcementRetries} Retries (${antwort.length} Z)`,
       );
-      if (shouldCompact(agentName)) runCompaction(agentName).catch((err) => logError("Compaction", err));
+      if (shouldCompact(agentName)) await runCompaction(agentName);
       return antwort;
     }
 
@@ -116,7 +112,10 @@ export async function processAgent(
     const antwortCall = allCalls.find((tc) => tc.function.name === "antworten");
     const otherCalls = allCalls.filter((tc) => tc.function.name !== "antworten");
 
-    // Zuerst alle anderen Tools ausfuehren (Seiteneffekte wie Speichern)
+    // Seiteneffekt-Tools (Speichern/Verschieben/Suchen) IMMER zuerst ausfuehren und
+    // vollstaendig abwarten, BEVOR wir die antworten-Bestaetigung an den User schicken.
+    // So sehen wir Fehler und der User bekommt nie eine "✅ Gespeichert"-Antwort, waehrend
+    // der Write noch laeuft.
     const toolResults = await Promise.all(
       otherCalls.map(async (tc) => {
         let args: Record<string, string | number>;
@@ -134,7 +133,7 @@ export async function processAgent(
       }),
     );
 
-    // Wenn "antworten" aufgerufen wurde → finale Antwort zurueckgeben
+    // Wenn "antworten" aufgerufen wurde → finale Antwort zurueckgeben (nach Seiteneffekten)
     if (antwortCall) {
       let antwortText = "Erledigt.";
       try {
@@ -145,7 +144,7 @@ export async function processAgent(
       }
       appendAgentConversation(agentName, userMessage, antwortText);
       logInfo(`[${agentName}] Antwort via antworten-Tool (Runde ${i + 1}, ${antwortText.length} Z)`);
-      if (shouldCompact(agentName)) runCompaction(agentName).catch((err) => logError("Compaction", err));
+      if (shouldCompact(agentName)) await runCompaction(agentName);
       return antwortText;
     }
 
@@ -168,28 +167,8 @@ export async function processAgent(
   const fallback = "Ich konnte deine Anfrage nicht vollstaendig bearbeiten.";
   appendAgentConversation(agentName, userMessage, fallback);
   logInfo(`[${agentName}] Fallback nach ${MAX_TOOL_ROUNDS} Runden`);
-  if (shouldCompact(agentName)) runCompaction(agentName).catch((err) => logError("Compaction", err));
+  if (shouldCompact(agentName)) await runCompaction(agentName);
   return fallback;
 }
 
-// btw-Modus: direkte Antwort ohne Tools und ohne Log
-export async function processBtw(userMessage: string): Promise<string> {
-  const workspaceContext = loadAgentWorkspace("Main", "minimal");
-  const dateLine = buildDateLine();
-  const systemPrompt = workspaceContext ? `${dateLine}\n\n${workspaceContext}` : dateLine;
-
-  const response = await client.chat.completions.create({
-    model: getModel(),
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ],
-  });
-
-  return response.choices[0].message.content ?? "Erledigt.";
-}
-
 export const processMessage = (msg: string) => processAgent("Main", msg);
-
-// Register processAgent in executor to break circular dependency
-registerProcessAgent(processAgent);
