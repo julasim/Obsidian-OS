@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { workspacePath, ensureDir, safePath } from "./helpers.js";
+import { workspacePath, ensureDir, safePath, resolveDir } from "./helpers.js";
 
 export function readFile(relativePath: string): string | null {
   const filepath = safePath(relativePath);
@@ -32,8 +32,22 @@ export interface FolderEntry {
 }
 
 export function listFolder(relativePath = ""): FolderEntry[] {
-  const folderPath = relativePath ? safePath(relativePath) : workspacePath;
-  if (!folderPath || !fs.existsSync(folderPath)) return [];
+  let folderPath = relativePath ? safePath(relativePath) : workspacePath;
+  if (!folderPath) return [];
+
+  // Case-insensitive Fallback fuer Linux-Filesysteme (Daily != daily)
+  if (relativePath && !fs.existsSync(folderPath)) {
+    const segments = relativePath.split(/[\\/]+/).filter(Boolean);
+    let current = workspacePath;
+    for (const seg of segments) {
+      const next = resolveDir(current, seg);
+      if (!fs.existsSync(next)) return [];
+      current = next;
+    }
+    folderPath = current;
+  }
+
+  if (!fs.existsSync(folderPath)) return [];
   try {
     return fs
       .readdirSync(folderPath, { withFileTypes: true })

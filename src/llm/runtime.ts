@@ -74,8 +74,14 @@ export async function processAgent(
     }
 
     const allCalls = reply.tool_calls.map((tc) => tc as { id: string; function: { name: string; arguments: string } });
-    const toolNames = allCalls.map((tc) => tc.function.name).join(", ");
-    logInfo(`[${agentName}] Tools (Runde ${i + 1}): ${toolNames}`);
+    const toolSummary = allCalls
+      .map((tc) => {
+        const argsRaw = tc.function.arguments || "";
+        const argsShort = argsRaw.length > 120 ? argsRaw.slice(0, 120) + "..." : argsRaw;
+        return `${tc.function.name}(${argsShort})`;
+      })
+      .join(", ");
+    logInfo(`[${agentName}] Tools (Runde ${i + 1}): ${toolSummary}`);
 
     // Pruefen ob "antworten" dabei ist
     const antwortCall = allCalls.find((tc) => tc.function.name === "antworten");
