@@ -3,6 +3,7 @@ import {
   searchHandlers,
   taskHandlers,
   terminHandlers,
+  projektHandlers,
   obsidianHandlers,
   exportHandlers,
 } from "./handlers/index.js";
@@ -19,7 +20,7 @@ export {
 
 const registry = new Map<string, ToolHandler>();
 
-for (const map of [noteHandlers, searchHandlers, taskHandlers, terminHandlers, obsidianHandlers, exportHandlers]) {
+for (const map of [noteHandlers, searchHandlers, taskHandlers, terminHandlers, projektHandlers, obsidianHandlers, exportHandlers]) {
   for (const [name, handler] of Object.entries(map)) {
     registry.set(name, handler);
   }
