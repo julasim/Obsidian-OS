@@ -5,10 +5,9 @@ import { executeTool } from "./executor.js";
 import { runCompaction } from "./compaction.js";
 import { loadAgentWorkspace, appendAgentConversation, loadAgentHistory, shouldCompact } from "../workspace/index.js";
 import {
+  DEFAULT_MODEL,
   MAX_HISTORY_CHARS,
   MAX_TOOL_ROUNDS,
-  SUBAGENT_MODEL,
-  getAgentModel,
   MESSAGE_PREVIEW_LENGTH,
   KEPT_TOOL_MESSAGES,
   HISTORY_LOAD_LIMIT,
@@ -17,20 +16,16 @@ import { logInfo, logError } from "../logger.js";
 
 // ---- Agent Runtime ----
 
-export async function processAgent(
-  agentName: string,
-  userMessage: string,
-  mode: "full" | "minimal" = "full",
-): Promise<string> {
+export async function processAgent(agentName: string, userMessage: string): Promise<string> {
   const preview =
     userMessage.length > MESSAGE_PREVIEW_LENGTH ? userMessage.slice(0, MESSAGE_PREVIEW_LENGTH) + "\u2026" : userMessage;
   logInfo(`[${agentName}] Start — "${preview}"`);
 
-  const workspaceContext = loadAgentWorkspace(agentName, mode);
+  const workspaceContext = loadAgentWorkspace(agentName);
   const dateLine = buildDateLine();
   const systemPrompt = workspaceContext ? `${dateLine}\n\n${workspaceContext}` : dateLine;
 
-  const history = mode === "full" ? loadAgentHistory(agentName, HISTORY_LOAD_LIMIT) : [];
+  const history = loadAgentHistory(agentName, HISTORY_LOAD_LIMIT);
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
@@ -41,7 +36,6 @@ export async function processAgent(
     { role: "user", content: userMessage },
   ];
 
-  const activeModel = mode === "minimal" ? SUBAGENT_MODEL : getAgentModel(agentName);
   let totalChars = messages.reduce((s, m) => s + JSON.stringify(m).length, 0);
 
   let enforcementRetries = 0;
@@ -49,7 +43,7 @@ export async function processAgent(
 
   for (let i = 0; i < MAX_TOOL_ROUNDS; i++) {
     const response = await client.chat.completions.create({
-      model: activeModel,
+      model: DEFAULT_MODEL,
       messages,
       tools: TOOLS,
       tool_choice: "required",

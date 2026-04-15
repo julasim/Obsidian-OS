@@ -77,7 +77,7 @@ export const obsidianSchemas: OpenAI.Chat.ChatCompletionTool[] = [
     function: {
       name: "memory_speichern",
       description:
-        "Speichert eine Information dauerhaft in MEMORY.md. Nutze PROAKTIV: wenn der User 'merk dir'/'vergiss nicht' sagt, wenn du Praefeenzen lernst, wenn du verfuegbare Templates entdeckst, oder wenn Projektdetails fuer spaeter relevant sind.",
+        "Speichert eine Information dauerhaft in MEMORY.md. Nutze PROAKTIV: wenn der User 'merk dir'/'vergiss nicht' sagt, wenn du Praeferenzen lernst oder wenn Projektdetails fuer spaeter relevant sind.",
       parameters: {
         type: "object",
         properties: {

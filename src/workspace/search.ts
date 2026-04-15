@@ -69,29 +69,3 @@ export function readIndexMd(): string | null {
   }
   return null;
 }
-
-/**
- * Findet alle Notizen die auf [[noteName]] verlinken (Backlinks).
- */
-export function findBacklinks(noteName: string): SearchResult[] {
-  const name = noteName.replace(/\.md$/, "");
-  const pattern = new RegExp(`\\[\\[${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\|[^\\]]*)?\\]\\]`, "i");
-  const results: SearchResult[] = [];
-
-  walkMarkdownFiles(workspacePath, (full) => {
-    try {
-      const lines = fs.readFileSync(full, "utf-8").split("\n");
-      for (const line of lines) {
-        if (pattern.test(line)) {
-          results.push({
-            file: path.relative(workspacePath, full).replace(/\\/g, "/"),
-            line: line.trim().slice(0, SEARCH_LINE_MAX),
-          });
-          break;
-        }
-      }
-    } catch { /* skip */ }
-  });
-
-  return results;
-}

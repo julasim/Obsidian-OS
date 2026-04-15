@@ -85,7 +85,7 @@ function truncateFile(content: string, filename: string): string {
   return content.slice(0, MAX_FILE_CHARS) + `\n\n[... ${filename} gekuerzt – ${removed} Zeichen entfernt]`;
 }
 
-export function loadAgentWorkspace(agentName: string, mode: "full" | "minimal" = "full"): string {
+export function loadAgentWorkspace(agentName: string): string {
   const agentDir = getAgentPath(agentName);
   let context = "";
   let totalChars = 0;
@@ -102,26 +102,21 @@ export function loadAgentWorkspace(agentName: string, mode: "full" | "minimal" =
   }
 
   addFile(path.join(agentDir, "SYSTEM.md"), "SYSTEM.md");
-
-  if (mode === "full") {
-    addFile(path.join(agentDir, "MEMORY.md"), "MEMORY.md");
-    const today = new Date().toISOString().slice(0, 10);
-    addFile(path.join(agentDir, WORKSPACE_LOGS_DIR, `${today}.md`), "Tageslog");
-  }
+  addFile(path.join(agentDir, "MEMORY.md"), "MEMORY.md");
+  const today = new Date().toISOString().slice(0, 10);
+  addFile(path.join(agentDir, WORKSPACE_LOGS_DIR, `${today}.md`), "Tageslog");
 
   return context.trim();
 }
 
-export function inspectAgentWorkspace(agentName: string, mode: "full" | "minimal" = "full"): WorkspaceFileInfo[] {
+export function inspectAgentWorkspace(agentName: string): WorkspaceFileInfo[] {
   const agentDir = getAgentPath(agentName);
   const today = new Date().toISOString().slice(0, 10);
 
   const candidates: { name: string; filepath: string }[] = [
     { name: "SYSTEM.md", filepath: path.join(agentDir, "SYSTEM.md") },
-    ...(mode === "full" ? [
-      { name: "MEMORY.md", filepath: path.join(agentDir, "MEMORY.md") },
-      { name: "Tageslog", filepath: path.join(agentDir, WORKSPACE_LOGS_DIR, `${today}.md`) },
-    ] : []),
+    { name: "MEMORY.md", filepath: path.join(agentDir, "MEMORY.md") },
+    { name: "Tageslog", filepath: path.join(agentDir, WORKSPACE_LOGS_DIR, `${today}.md`) },
   ];
 
   const result: WorkspaceFileInfo[] = [];

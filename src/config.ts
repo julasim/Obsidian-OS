@@ -4,8 +4,6 @@ import path from "path";
 // ── LLM (Ollama) ─────────────────────────────────────────────────────────────
 export const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1";
 export const DEFAULT_MODEL = process.env.OLLAMA_MODEL || "kimi-k2.5:cloud";
-export const FAST_MODEL = process.env.OLLAMA_FAST_MODEL || DEFAULT_MODEL;
-export const SUBAGENT_MODEL = process.env.OLLAMA_SUBAGENT_MODEL || DEFAULT_MODEL;
 export const VISION_MODEL = process.env.VISION_MODEL || DEFAULT_MODEL;
 
 // ── Whisper (lokal) ──────────────────────────────────────────────────────────
@@ -14,7 +12,6 @@ export const WHISPER_LANG = process.env.WHISPER_LANG || "de";
 
 // ── Agent ────────────────────────────────────────────────────────────────────
 export const MAX_TOOL_ROUNDS = 5;
-export const getAgentModel = (_name: string) => DEFAULT_MODEL;
 
 // ── Ged\u00e4chtnis ────────────────────────────────────────────────────────────────
 export const MAX_HISTORY_CHARS = 60_000;
@@ -47,7 +44,6 @@ export const ALLOWED_CHAT_ID = process.env.ALLOWED_CHAT_ID
 // ── System ───────────────────────────────────────────────────────────────────
 export const TIMEZONE = "Europe/Vienna";
 export const LOCALE = "de-AT";
-export const LANGUAGE = "Deutsch";
 export const LOG_FILE = path.join(process.cwd(), "logs", "bot.log");
 
 // ── Limits ───────────────────────────────────────────────────────────────────

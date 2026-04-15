@@ -1,5 +1,6 @@
 import type OpenAI from "openai";
-import { client, getModel } from "./client.js";
+import { client } from "./client.js";
+import { DEFAULT_MODEL } from "../config.js";
 import { finalizeMainWorkspace } from "../workspace/index.js";
 
 // ---- Setup State ----
@@ -52,7 +53,7 @@ export async function processSetup(userMessage: string): Promise<string> {
   if (_messages.length > 20) _messages = [_messages[0], ..._messages.slice(-6)];
 
   const response = await client.chat.completions.create({
-    model: getModel(),
+    model: DEFAULT_MODEL,
     messages: _messages,
     tools: [SETUP_TOOL],
     tool_choice: "auto",

@@ -37,6 +37,8 @@ export async function handleStatus(ctx: Context): Promise<void> {
     }
   }
 
+  const chatId = ctx.chat?.id ?? "?";
+
   await ctx.reply(`
 Obsidian-OS Status
 
@@ -46,11 +48,13 @@ Notizen (Inbox): ${inboxCount}
 
 Ollama: ${process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1"}
 Modell: ${process.env.OLLAMA_MODEL || "kimi-k2.5:cloud"}
+
+Chat-ID: ${chatId}  (fuer ALLOWED_CHAT_ID in .env)
   `.trim());
 }
 
 export async function handleKontext(ctx: Context): Promise<void> {
-  const files = inspectAgentWorkspace("Main", "full");
+  const files = inspectAgentWorkspace("Main");
   if (!files.length) {
     await ctx.reply("Kein Workspace gefunden.");
     return;
