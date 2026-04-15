@@ -1,11 +1,8 @@
 import {
   noteHandlers,
   searchHandlers,
-  taskHandlers,
-  terminHandlers,
   obsidianHandlers,
   exportHandlers,
-  ingestHandlers,
 } from "./handlers/index.js";
 import type { ToolHandler } from "./handlers/index.js";
 
@@ -24,7 +21,7 @@ export {
 
 const registry = new Map<string, ToolHandler>();
 
-for (const map of [noteHandlers, searchHandlers, taskHandlers, terminHandlers, obsidianHandlers, exportHandlers, ingestHandlers]) {
+for (const map of [noteHandlers, searchHandlers, obsidianHandlers, exportHandlers]) {
   for (const [name, handler] of Object.entries(map)) {
     registry.set(name, handler);
   }

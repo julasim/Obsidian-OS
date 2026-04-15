@@ -4,14 +4,10 @@
   "description": "Persönlicher Obsidian-Vault-Assistent via Telegram",
   "type": "module",
   "main": "dist/index.js",
-  "bin": {
-    "obsidian-os": "dist/cli.js"
-  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "cli": "node dist/cli.js"
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "docx": "^9.6.1",

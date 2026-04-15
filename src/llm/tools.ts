@@ -2,11 +2,8 @@ import type OpenAI from "openai";
 import {
   noteSchemas,
   searchSchemas,
-  taskSchemas,
-  terminSchemas,
   obsidianSchemas,
   exportSchemas,
-  ingestSchemas,
 } from "./handlers/index.js";
 
 const antwortenSchema: OpenAI.Chat.ChatCompletionTool = {
@@ -29,9 +26,6 @@ export const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   antwortenSchema,
   ...noteSchemas,
   ...searchSchemas,
-  ...taskSchemas,
-  ...terminSchemas,
   ...obsidianSchemas,
   ...exportSchemas,
-  ...ingestSchemas,
 ];

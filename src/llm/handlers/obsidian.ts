@@ -1,25 +1,13 @@
 import type OpenAI from "openai";
-import fs from "fs";
-import path from "path";
 import {
   getOrCreateDailyNote,
   appendToDailyNote,
   listDailyNotes,
   readDailyNote,
-  listTemplates,
-  readTemplate,
-  createFromTemplate,
-  findBacklinks,
-  findByTag,
   upsertFrontmatterField,
   appendAgentMemory,
 } from "../../workspace/index.js";
-import { WORKSPACE_PATH, VISION_MODEL } from "../../config.js";
-import { resolveDir } from "../../workspace/helpers.js";
 import type { HandlerMap } from "./types.js";
-
-// Default-Fallback — Struktur wird primär via CLAUDE.md gesteuert.
-const ATTACHMENTS_DIR = process.env.ATTACHMENTS_DIR || "Attachments";
 
 export const obsidianSchemas: OpenAI.Chat.ChatCompletionTool[] = [
   {
@@ -71,55 +59,6 @@ export const obsidianSchemas: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
-      name: "notiz_aus_vorlage",
-      description:
-        "Erstellt eine Notiz aus einer Vorlage (Templates/-Ordner). Unterstuetzt {{variable}}-Platzhalter. Eingebaut: date, time, weekday, year, month, day, title. Wenn die Vorlage nicht gefunden wird, werden verfuegbare Vorlagen aufgelistet.",
-      parameters: {
-        type: "object",
-        properties: {
-          vorlage: { type: "string", description: "Name der Vorlage (z.B. 'Meeting', 'Projekt')" },
-          zielpfad: { type: "string", description: "Relativer Pfad fuer die neue Datei (z.B. 'Inbox/meeting.md')" },
-          variablen: {
-            type: "string",
-            description: 'Optionale Variablen als JSON (z.B. \'{"titel": "Standup", "projekt": "X"}\')',
-          },
-        },
-        required: ["vorlage", "zielpfad"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "backlinks_suchen",
-      description: "Findet alle Notizen die auf [[Notizname]] verlinken (Backlinks).",
-      parameters: {
-        type: "object",
-        properties: {
-          notiz: { type: "string", description: "Notizname (ohne .md)" },
-        },
-        required: ["notiz"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "tag_suchen",
-      description: "Findet alle Dateien mit einem bestimmten Tag (Frontmatter oder #hashtag im Text).",
-      parameters: {
-        type: "object",
-        properties: {
-          tag: { type: "string", description: "Tag ohne # (z.B. 'idee', 'projekt')" },
-          ordner: { type: "string", description: "Optional: Suche auf Unterordner begrenzen" },
-        },
-        required: ["tag"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
       name: "frontmatter_setzen",
       description: "Setzt oder aktualisiert ein YAML-Frontmatter-Feld in einer Vault-Datei.",
       parameters: {
@@ -130,22 +69,6 @@ export const obsidianSchemas: OpenAI.Chat.ChatCompletionTool[] = [
           wert: { type: "string", description: "Wert (fuer Arrays: komma-separiert)" },
         },
         required: ["pfad", "schluessel", "wert"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "bild_analysieren",
-      description:
-        "Analysiert ein Bild aus dem Vault via Vision-AI (Beschreibung, OCR, Inhaltsanalyse). Bild muss im Attachments-Ordner liegen.",
-      parameters: {
-        type: "object",
-        properties: {
-          dateiname: { type: "string", description: "Dateiname im Attachments-Ordner (z.B. 'foto.jpg')" },
-          aufgabe: { type: "string", description: "Was analysieren? (Standard: Bild beschreiben + Text extrahieren)" },
-        },
-        required: ["dateiname"],
       },
     },
   },
@@ -191,50 +114,6 @@ export const obsidianHandlers: HandlerMap = {
     return `${files.length} Daily Note(s):\n${files.map((f) => `\u{1F4C4} ${f}`).join("\n")}`;
   },
 
-  notiz_aus_vorlage: async (args) => {
-    const vorlageName = String(args.vorlage);
-    const zielpfad = String(args.zielpfad);
-
-    // Block path traversal before it reaches workspace functions
-    if (zielpfad.includes("..") || path.isAbsolute(zielpfad)) {
-      return "Fehler: Ungueltiger Zielpfad (kein .. oder absoluter Pfad erlaubt).";
-    }
-
-    const rawTemplate = readTemplate(vorlageName);
-    if (!rawTemplate) {
-      const available = listTemplates();
-      return `Vorlage "${vorlageName}" nicht gefunden.\nVerfuegbar: ${available.join(", ") || "keine"}`;
-    }
-
-    let extraVars: Record<string, string> = {};
-    if (args.variablen) {
-      try {
-        extraVars = JSON.parse(String(args.variablen));
-      } catch {
-        return "Fehler: variablen ist kein gueltiges JSON.";
-      }
-    }
-
-    const created = createFromTemplate(vorlageName, zielpfad, extraVars);
-    if (!created) return `Fehler beim Erstellen aus Vorlage "${vorlageName}".`;
-    const relPath = path.relative(WORKSPACE_PATH, created).replace(/\\/g, "/");
-    return `Notiz erstellt: ${relPath}`;
-  },
-
-  backlinks_suchen: async (args) => {
-    const results = findBacklinks(String(args.notiz));
-    if (!results.length) return `Keine Backlinks fuer "[[${args.notiz}]]".`;
-    return `Backlinks fuer [[${args.notiz}]] (${results.length}):\n\n` +
-      results.map((r) => `\u{1F4C4} ${r.file}\n   ${r.line}`).join("\n\n");
-  },
-
-  tag_suchen: async (args) => {
-    const tag = String(args.tag).replace(/^#/, "");
-    const files = findByTag(tag, args.ordner ? String(args.ordner) : undefined);
-    if (!files.length) return `Keine Dateien mit #${tag}.`;
-    return `#${tag} (${files.length} Treffer):\n${files.map((f) => `\u{1F4C4} ${f}`).join("\n")}`;
-  },
-
   frontmatter_setzen: async (args) => {
     const pfad = String(args.pfad);
     const key = String(args.schluessel);
@@ -245,41 +124,6 @@ export const obsidianHandlers: HandlerMap = {
     }
     const ok = upsertFrontmatterField(pfad, key, value);
     return ok ? `Frontmatter: ${pfad} → ${key}: ${rawVal}` : `Datei nicht gefunden: ${pfad}`;
-  },
-
-  bild_analysieren: async (args) => {
-    const dateiname = String(args.dateiname);
-    const aufgabe = args.aufgabe
-      ? String(args.aufgabe)
-      : "Beschreibe dieses Bild detailliert. Falls Text sichtbar ist, transkribiere ihn vollstaendig.";
-
-    const bildPfad = path.join(resolveDir(WORKSPACE_PATH, ATTACHMENTS_DIR), dateiname);
-    if (!fs.existsSync(bildPfad)) return `Bild nicht gefunden: ${ATTACHMENTS_DIR}/${dateiname}`;
-
-    const ext = path.extname(dateiname).toLowerCase().slice(1);
-    const mimeMap: Record<string, string> = {
-      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
-      gif: "image/gif", webp: "image/webp",
-    };
-
-    try {
-      const base64 = fs.readFileSync(bildPfad).toString("base64");
-      const { client } = await import("../client.js");
-      const response = await client.chat.completions.create({
-        model: VISION_MODEL,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "image_url", image_url: { url: `data:${mimeMap[ext] || "image/jpeg"};base64,${base64}` } },
-            { type: "text", text: aufgabe },
-          ],
-        }],
-        max_tokens: 2000,
-      });
-      return response.choices[0].message.content ?? "Keine Antwort vom Vision-Modell.";
-    } catch (err) {
-      return `Vision-Fehler: ${err}`;
-    }
   },
 
   memory_speichern: async (args) => {
