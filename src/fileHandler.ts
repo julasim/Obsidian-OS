@@ -99,8 +99,8 @@ export async function handlePhoto(ctx: Context): Promise<string> {
   const mimeType = ext === "png" ? "image/png" : "image/jpeg";
 
   try {
-    const { client } = await import("./llm/client.js");
-    const response = await client.chat.completions.create({
+    const { chatComplete } = await import("./llm/client.js");
+    const response = await chatComplete({
       model: VISION_MODEL,
       messages: [
         {
@@ -117,7 +117,7 @@ export async function handlePhoto(ctx: Context): Promise<string> {
                 : "Beschreibe dieses Bild detailliert. Falls Text oder Handschrift sichtbar ist, transkribiere ihn vollstaendig.",
             },
           ],
-        },
+        } as any,
       ],
       max_tokens: 2000,
     });

@@ -1,10 +1,10 @@
-import type OpenAI from "openai";
+import type { ToolSchema } from "../types.js";
 import { saveNote, readNote, appendToNote, deleteNote } from "../../workspace/notes.js";
 import { readFile } from "../../workspace/files.js";
 import { editFile } from "../../workspace/fileops.js";
 import type { HandlerMap } from "./types.js";
 
-export const noteSchemas: OpenAI.Chat.ChatCompletionTool[] = [
+export const noteSchemas: ToolSchema[] = [
   {
     type: "function",
     function: {

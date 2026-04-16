@@ -1,5 +1,5 @@
-import type OpenAI from "openai";
-import { client, buildDateLine } from "./client.js";
+import { chatComplete, buildDateLine } from "./client.js";
+import type { ChatMessage } from "./types.js";
 import { TOOLS } from "./tools.js";
 import { executeTool } from "./executor.js";
 import { runCompaction } from "./compaction.js";
@@ -27,7 +27,7 @@ export async function processAgent(agentName: string, userMessage: string): Prom
 
   const history = loadAgentHistory(agentName, HISTORY_LOAD_LIMIT);
 
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+  const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     ...history.flatMap((h) => [
       { role: "user" as const, content: h.user },
@@ -42,7 +42,7 @@ export async function processAgent(agentName: string, userMessage: string): Prom
   const MAX_ENFORCEMENT_RETRIES = 2;
 
   for (let i = 0; i < MAX_TOOL_ROUNDS; i++) {
-    const response = await client.chat.completions.create({
+    const response = await chatComplete({
       model: DEFAULT_MODEL,
       messages,
       tools: TOOLS,

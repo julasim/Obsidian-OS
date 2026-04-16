@@ -1,5 +1,5 @@
-import type OpenAI from "openai";
-import { client } from "./client.js";
+import { chatComplete } from "./client.js";
+import type { ToolSchema, ChatMessage } from "./types.js";
 import { DEFAULT_MODEL } from "../config.js";
 import { finalizeMainWorkspace } from "../workspace/index.js";
 
@@ -13,7 +13,7 @@ export function deactivateSetup(): void { _active = false; }
 
 // ---- Setup Tool ----
 
-const SETUP_TOOL: OpenAI.Chat.ChatCompletionTool = {
+const SETUP_TOOL: ToolSchema = {
   type: "function",
   function: {
     name: "setup_abschliessen",
@@ -42,7 +42,7 @@ Antworte auf Deutsch.`;
 
 // ---- Setup Conversation ----
 
-let _messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+let _messages: ChatMessage[] = [];
 
 export async function processSetup(userMessage: string): Promise<string> {
   if (_messages.length === 0) {
@@ -52,7 +52,7 @@ export async function processSetup(userMessage: string): Promise<string> {
   _messages.push({ role: "user", content: userMessage });
   if (_messages.length > 20) _messages = [_messages[0], ..._messages.slice(-6)];
 
-  const response = await client.chat.completions.create({
+  const response = await chatComplete({
     model: DEFAULT_MODEL,
     messages: _messages,
     tools: [SETUP_TOOL],
@@ -60,7 +60,7 @@ export async function processSetup(userMessage: string): Promise<string> {
   });
 
   const reply = response.choices[0].message;
-  _messages.push(reply);
+  _messages.push(reply as ChatMessage);
 
   if (reply.tool_calls?.length) {
     const call = reply.tool_calls[0] as { id: string; function: { name: string; arguments: string } };

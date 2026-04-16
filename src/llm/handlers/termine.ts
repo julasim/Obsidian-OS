@@ -1,10 +1,10 @@
-import type OpenAI from "openai";
+import type { ToolSchema } from "../types.js";
 import path from "path";
 import { addTermin, listTermine } from "../../workspace/termine.js";
 import { WORKSPACE_PATH } from "../../config.js";
 import type { HandlerMap } from "./types.js";
 
-export const terminSchemas: OpenAI.Chat.ChatCompletionTool[] = [
+export const terminSchemas: ToolSchema[] = [
   {
     type: "function",
     function: {

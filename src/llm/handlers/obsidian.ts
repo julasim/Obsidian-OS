@@ -1,4 +1,4 @@
-import type OpenAI from "openai";
+import type { ToolSchema } from "../types.js";
 import {
   getOrCreateDailyNote,
   appendToDailyNote,
@@ -9,7 +9,7 @@ import {
 } from "../../workspace/index.js";
 import type { HandlerMap } from "./types.js";
 
-export const obsidianSchemas: OpenAI.Chat.ChatCompletionTool[] = [
+export const obsidianSchemas: ToolSchema[] = [
   {
     type: "function",
     function: {

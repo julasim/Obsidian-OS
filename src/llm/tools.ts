@@ -1,4 +1,4 @@
-import type OpenAI from "openai";
+import type { ToolSchema } from "./types.js";
 import {
   noteSchemas,
   searchSchemas,
@@ -9,7 +9,7 @@ import {
   exportSchemas,
 } from "./handlers/index.js";
 
-const antwortenSchema: OpenAI.Chat.ChatCompletionTool = {
+const antwortenSchema: ToolSchema = {
   type: "function",
   function: {
     name: "antworten",
@@ -25,7 +25,7 @@ const antwortenSchema: OpenAI.Chat.ChatCompletionTool = {
   },
 };
 
-export const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
+export const TOOLS: ToolSchema[] = [
   antwortenSchema,
   ...noteSchemas,
   ...searchSchemas,

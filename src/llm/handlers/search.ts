@@ -1,11 +1,11 @@
-import type OpenAI from "openai";
+import type { ToolSchema } from "../types.js";
 import { searchWorkspace, readIndexMd } from "../../workspace/search.js";
 import { globFiles } from "../../workspace/fileops.js";
 import { listFolder } from "../../workspace/files.js";
 import { TOOL_OUTPUT_MAX_CHARS } from "../../config.js";
 import type { HandlerMap } from "./types.js";
 
-export const searchSchemas: OpenAI.Chat.ChatCompletionTool[] = [
+export const searchSchemas: ToolSchema[] = [
   {
     type: "function",
     function: {

@@ -193,32 +193,34 @@ while true; do
 
       echo -e ""
       echo -e "  ${BOLD}Modelle (kostenlos):${NC}"
-      echo -e "    ${CYAN}1)${NC} google/gemini-2.5-flash-preview:free    — Schnell, kostenlos ${GREEN}(empfohlen zum Start)${NC}"
-      echo -e "    ${CYAN}2)${NC} deepseek/deepseek-chat-v3-0324:free     — Stark, kostenlos"
-      echo -e "    ${CYAN}3)${NC} meta-llama/llama-4-maverick:free        — Open-Source, kostenlos"
+      echo -e "    ${CYAN}1)${NC} nvidia/nemotron-3-super-120b-a12b:free  — 120B, stark, kostenlos ${GREEN}(empfohlen zum Start)${NC}"
+      echo -e "    ${CYAN}2)${NC} google/gemini-2.5-flash-preview:free    — Schnell, kostenlos"
+      echo -e "    ${CYAN}3)${NC} deepseek/deepseek-chat-v3-0324:free     — Stark, kostenlos"
+      echo -e "    ${CYAN}4)${NC} meta-llama/llama-4-maverick:free        — Open-Source, kostenlos"
       echo -e ""
       echo -e "  ${BOLD}Modelle (kostenpflichtig, Credits noetig):${NC}"
-      echo -e "    ${CYAN}4)${NC} anthropic/claude-sonnet-4               — Bestes Tool-Calling"
-      echo -e "    ${CYAN}5)${NC} openai/gpt-4o                           — Solides Allround-Modell"
-      echo -e "    ${CYAN}6)${NC} google/gemini-2.5-pro                   — Grosses Kontextfenster"
-      echo -e "    ${CYAN}7)${NC} Eigene Eingabe"
+      echo -e "    ${CYAN}5)${NC} anthropic/claude-sonnet-4               — Bestes Tool-Calling"
+      echo -e "    ${CYAN}6)${NC} openai/gpt-4o                           — Solides Allround-Modell"
+      echo -e "    ${CYAN}7)${NC} google/gemini-2.5-pro                   — Grosses Kontextfenster"
+      echo -e "    ${CYAN}8)${NC} Eigene Eingabe"
       echo -e ""
 
       CURRENT_MODEL="$(env_get LLM_MODEL)"
       while true; do
-        read -rp "  Auswahl [1-7] (default 1): " MODEL_CHOICE
+        read -rp "  Auswahl [1-8] (default 1): " MODEL_CHOICE
         MODEL_CHOICE="${MODEL_CHOICE:-1}"
         case "$MODEL_CHOICE" in
-          1) SELECTED_MODEL="google/gemini-2.5-flash-preview:free" ; break ;;
-          2) SELECTED_MODEL="deepseek/deepseek-chat-v3-0324:free" ; break ;;
-          3) SELECTED_MODEL="meta-llama/llama-4-maverick:free" ; break ;;
-          4) SELECTED_MODEL="anthropic/claude-sonnet-4" ; break ;;
-          5) SELECTED_MODEL="openai/gpt-4o" ; break ;;
-          6) SELECTED_MODEL="google/gemini-2.5-pro" ; break ;;
-          7) read -rp "  Modell-ID (provider/model): " SELECTED_MODEL
+          1) SELECTED_MODEL="nvidia/nemotron-3-super-120b-a12b:free" ; break ;;
+          2) SELECTED_MODEL="google/gemini-2.5-flash-preview:free" ; break ;;
+          3) SELECTED_MODEL="deepseek/deepseek-chat-v3-0324:free" ; break ;;
+          4) SELECTED_MODEL="meta-llama/llama-4-maverick:free" ; break ;;
+          5) SELECTED_MODEL="anthropic/claude-sonnet-4" ; break ;;
+          6) SELECTED_MODEL="openai/gpt-4o" ; break ;;
+          7) SELECTED_MODEL="google/gemini-2.5-pro" ; break ;;
+          8) read -rp "  Modell-ID (provider/model): " SELECTED_MODEL
              if [ -n "$SELECTED_MODEL" ]; then break; fi
              warn "Modell-ID darf nicht leer sein." ;;
-          *) warn "Ungueltig — 1 bis 7 waehlen." ;;
+          *) warn "Ungueltig — 1 bis 8 waehlen." ;;
         esac
       done
       env_set "LLM_MODEL" "$SELECTED_MODEL"

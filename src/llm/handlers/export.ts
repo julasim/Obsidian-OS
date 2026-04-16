@@ -1,4 +1,4 @@
-import type OpenAI from "openai";
+import type { ToolSchema } from "../types.js";
 import PDFDocument from "pdfkit";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from "docx";
 import { readNote } from "../../workspace/notes.js";
@@ -158,7 +158,7 @@ async function generateDocx(title: string, body: string): Promise<Buffer> {
 
 // ---- Tool Schemas ----
 
-export const exportSchemas: OpenAI.Chat.ChatCompletionTool[] = [
+export const exportSchemas: ToolSchema[] = [
   {
     type: "function",
     function: {

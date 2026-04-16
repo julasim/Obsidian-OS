@@ -1,10 +1,10 @@
-import { client } from "./client.js";
+import { chatComplete } from "./client.js";
 import { DEFAULT_MODEL } from "../config.js";
 import { getLogForCompaction, writeCompactedLog } from "../workspace/index.js";
 import { logInfo, logError } from "../logger.js";
 
 async function summarizeLog(text: string): Promise<string> {
-  const response = await client.chat.completions.create({
+  const response = await chatComplete({
     model: DEFAULT_MODEL,
     messages: [
       {

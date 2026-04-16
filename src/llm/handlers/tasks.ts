@@ -1,10 +1,10 @@
-import type OpenAI from "openai";
+import type { ToolSchema } from "../types.js";
 import path from "path";
 import { addTask, listOpenTasks } from "../../workspace/aufgaben.js";
 import { WORKSPACE_PATH } from "../../config.js";
 import type { HandlerMap } from "./types.js";
 
-export const taskSchemas: OpenAI.Chat.ChatCompletionTool[] = [
+export const taskSchemas: ToolSchema[] = [
   {
     type: "function",
     function: {

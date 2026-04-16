@@ -1,8 +1,8 @@
-import type OpenAI from "openai";
+import type { ToolSchema } from "../types.js";
 import { listProjekte, getProjektInhalt } from "../../workspace/projekte.js";
 import type { HandlerMap } from "./types.js";
 
-export const projektSchemas: OpenAI.Chat.ChatCompletionTool[] = [
+export const projektSchemas: ToolSchema[] = [
   {
     type: "function",
     function: {
