@@ -92,7 +92,7 @@ export async function handlePhoto(ctx: Context): Promise<string> {
   const mimeType = ext === "png" ? "image/png" : "image/jpeg";
 
   try {
-    const { client } = await import("./llm/client.js"); // Ollama Vision-Modell
+    const { client } = await import("./llm/client.js");
     const response = await client.chat.completions.create({
       model: VISION_MODEL,
       messages: [

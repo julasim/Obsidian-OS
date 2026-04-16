@@ -46,8 +46,8 @@ Vault: ${vault ? "\u2713 erreichbar" : "\u2717 nicht gefunden"}
 Pfad: ${wp}
 Notizen (Inbox): ${inboxCount}
 
-Ollama: ${process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1"}
-Modell: ${process.env.OLLAMA_MODEL || "kimi-k2.5:cloud"}
+LLM: ${process.env.LLM_BASE_URL || process.env.OLLAMA_BASE_URL || "https://openrouter.ai/api/v1"}
+Modell: ${process.env.LLM_MODEL || process.env.OLLAMA_MODEL || "anthropic/claude-sonnet-4"}
 
 Chat-ID: ${chatId}  (fuer ALLOWED_CHAT_ID in .env)
   `.trim());

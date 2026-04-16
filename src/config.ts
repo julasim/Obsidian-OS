@@ -1,10 +1,34 @@
 import "dotenv/config";
 import path from "path";
 
-// ── LLM (Ollama) ─────────────────────────────────────────────────────────────
-export const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1";
-export const DEFAULT_MODEL = process.env.OLLAMA_MODEL || "kimi-k2.5:cloud";
+// ── LLM (Provider-agnostisch: OpenRouter / Ollama / OpenAI / etc.) ───────────
+// Priority-Chain: LLM_* > OPENROUTER_* > OLLAMA_* > Smart-Default
+export const LLM_API_KEY = process.env.LLM_API_KEY
+  ?? process.env.OPENROUTER_API_KEY
+  ?? process.env.OLLAMA_API_KEY
+  ?? "ollama";
+
+const _isLocal = LLM_API_KEY === "ollama";
+
+export const LLM_BASE_URL = process.env.LLM_BASE_URL
+  ?? process.env.OLLAMA_BASE_URL
+  ?? (_isLocal ? "http://localhost:11434/v1" : "https://openrouter.ai/api/v1");
+
+export const DEFAULT_MODEL = process.env.LLM_MODEL
+  ?? process.env.OLLAMA_MODEL
+  ?? (_isLocal ? "qwen2.5:7b" : "anthropic/claude-sonnet-4");
+
 export const VISION_MODEL = process.env.VISION_MODEL || DEFAULT_MODEL;
+
+/** OpenRouter-spezifische Header (werden von anderen Providern ignoriert) */
+export const LLM_APP_NAME = process.env.LLM_APP_NAME ?? "Obsidian-OS";
+export const LLM_APP_URL = process.env.LLM_APP_URL ?? "";
+
+/** True wenn LLM auf localhost laeuft (Ollama) */
+export const LLM_IS_LOCAL = LLM_BASE_URL.includes("localhost") || LLM_BASE_URL.includes("127.0.0.1");
+
+// Backward-compat aliases (fuer bestehende Imports die OLLAMA_BASE_URL referenzieren)
+export const OLLAMA_BASE_URL = LLM_BASE_URL;
 
 // ── Whisper (lokal) ──────────────────────────────────────────────────────────
 export const WHISPER_MODEL = process.env.WHISPER_MODEL || "large-v3";

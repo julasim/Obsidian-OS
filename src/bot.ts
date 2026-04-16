@@ -70,7 +70,7 @@ export function createBot(token: string): Bot {
           await safeReply(ctx, antwort);
         } catch (err) {
           logError("Setup", err);
-          await ctx.reply("Fehler beim Setup \u2014 ist Ollama erreichbar?");
+          await ctx.reply("Fehler beim Setup \u2014 ist der LLM-Provider erreichbar?");
         } finally {
           typing.stop();
         }
@@ -93,7 +93,7 @@ export function createBot(token: string): Bot {
           const filename = filepath.split(/[\\/]/).pop();
           await ctx.reply(`LLM nicht erreichbar \u2014 als Notiz gespeichert: ${filename}`);
         } catch {
-          await ctx.reply("Fehler \u2014 ist Ollama erreichbar?");
+          await ctx.reply("Fehler \u2014 LLM nicht erreichbar.");
         }
       } finally {
         typing.stop();

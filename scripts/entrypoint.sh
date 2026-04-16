@@ -1,19 +1,40 @@
 #!/bin/bash
 set -e
 
-# ── Ollama Server starten ───────────────────────────────────────────────────
-echo "[entrypoint] Ollama Server wird gestartet..."
-ollama serve &
-OLLAMA_PID=$!
+# ── LLM-Provider erkennen ─────────────────────────────────────────────────────
+# Ollama nur starten wenn kein Remote-API-Key gesetzt ist UND
+# LLM_BASE_URL auf localhost zeigt (oder gar nicht gesetzt ist).
+NEED_OLLAMA=true
 
-# Warten bis Ollama bereit ist
-for i in $(seq 1 15); do
-  if curl -sf http://localhost:11434/api/version &>/dev/null; then
-    echo "[entrypoint] Ollama laeuft"
-    break
-  fi
-  sleep 1
-done
+if [ -n "${LLM_API_KEY:-}" ] || [ -n "${OPENROUTER_API_KEY:-}" ]; then
+  # Expliziter API-Key gesetzt → remote Provider (OpenRouter/OpenAI/etc.)
+  NEED_OLLAMA=false
+fi
+
+if [ -n "${LLM_BASE_URL:-}" ]; then
+  case "${LLM_BASE_URL}" in
+    *localhost*|*127.0.0.1*) NEED_OLLAMA=true ;;
+    *) NEED_OLLAMA=false ;;
+  esac
+fi
+
+# ── Ollama Server starten (nur wenn lokal benoetigt) ──────────────────────────
+if [ "$NEED_OLLAMA" = true ]; then
+  echo "[entrypoint] Ollama Server wird gestartet..."
+  ollama serve &
+  OLLAMA_PID=$!
+
+  # Warten bis Ollama bereit ist
+  for i in $(seq 1 15); do
+    if curl -sf http://localhost:11434/api/version &>/dev/null; then
+      echo "[entrypoint] Ollama laeuft"
+      break
+    fi
+    sleep 1
+  done
+else
+  echo "[entrypoint] Remote LLM-Provider — Ollama wird uebersprungen"
+fi
 
 # ── OneDrive Mount (wenn RCLONE_TOKEN gesetzt) ──────────────────────────────
 if [ -n "${RCLONE_TOKEN:-}" ]; then

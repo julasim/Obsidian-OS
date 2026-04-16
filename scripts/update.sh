@@ -93,18 +93,32 @@ fi
 # ── 4. Health-Check ─────────────────────────────────────────────────────────
 step "4/5  Health-Check"
 
-# Warten auf Ollama
-echo "  > Warte auf Ollama..."
-OLLAMA_OK=0
-for i in $(seq 1 20); do
-  if docker compose exec -T bot curl -sf http://localhost:11434/api/version &>/dev/null; then
-    ok "Ollama laeuft"
-    OLLAMA_OK=1
-    break
-  fi
-  sleep 2
-done
-[ "$OLLAMA_OK" = "0" ] && warn "Ollama antwortet nicht — ggf. 'docker compose exec bot ollama signin'"
+# LLM-Provider erkennen
+LLM_KEY=$(grep -E "^(LLM_API_KEY|OPENROUTER_API_KEY)=" "$PROJECT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)
+LLM_URL=$(grep -E "^LLM_BASE_URL=" "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2-)
+USES_LOCAL=false
+if [ -z "$LLM_KEY" ] || [ "$LLM_KEY" = "ollama" ]; then
+  USES_LOCAL=true
+elif echo "$LLM_URL" | grep -qE "localhost|127\.0\.0\.1"; then
+  USES_LOCAL=true
+fi
+
+if [ "$USES_LOCAL" = "true" ]; then
+  echo "  > Warte auf Ollama..."
+  OLLAMA_OK=0
+  for i in $(seq 1 20); do
+    if docker compose exec -T bot curl -sf http://localhost:11434/api/version &>/dev/null; then
+      ok "Ollama laeuft"
+      OLLAMA_OK=1
+      break
+    fi
+    sleep 2
+  done
+  [ "$OLLAMA_OK" = "0" ] && warn "Ollama antwortet nicht — ggf. 'docker compose exec bot ollama signin'"
+else
+  LLM_MODEL=$(grep -E "^LLM_MODEL=" "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2-)
+  ok "Remote LLM-Provider (${LLM_MODEL:-auto})"
+fi
 
 # OneDrive Mount pruefen (falls konfiguriert)
 if grep -q "^RCLONE_TOKEN=." "$PROJECT_DIR/.env" 2>/dev/null; then
