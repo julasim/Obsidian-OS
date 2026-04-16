@@ -3,20 +3,21 @@ import path from "path";
 
 // ── LLM (Provider-agnostisch: OpenRouter / Ollama / OpenAI / etc.) ───────────
 // Priority-Chain: LLM_* > OPENROUTER_* > OLLAMA_* > Smart-Default
+// || statt ?? — leere Strings in .env (z.B. OLLAMA_BASE_URL=) sollen als "nicht gesetzt" gelten.
 export const LLM_API_KEY = process.env.LLM_API_KEY
-  ?? process.env.OPENROUTER_API_KEY
-  ?? process.env.OLLAMA_API_KEY
-  ?? "ollama";
+  || process.env.OPENROUTER_API_KEY
+  || process.env.OLLAMA_API_KEY
+  || "ollama";
 
 const _isLocal = LLM_API_KEY === "ollama";
 
 export const LLM_BASE_URL = process.env.LLM_BASE_URL
-  ?? process.env.OLLAMA_BASE_URL
-  ?? (_isLocal ? "http://localhost:11434/v1" : "https://openrouter.ai/api/v1");
+  || process.env.OLLAMA_BASE_URL
+  || (_isLocal ? "http://localhost:11434/v1" : "https://openrouter.ai/api/v1");
 
 export const DEFAULT_MODEL = process.env.LLM_MODEL
-  ?? process.env.OLLAMA_MODEL
-  ?? (_isLocal ? "qwen2.5:7b" : "anthropic/claude-sonnet-4");
+  || process.env.OLLAMA_MODEL
+  || (_isLocal ? "qwen2.5:7b" : "anthropic/claude-sonnet-4");
 
 export const VISION_MODEL = process.env.VISION_MODEL || DEFAULT_MODEL;
 

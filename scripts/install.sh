@@ -38,6 +38,13 @@ env_set() {
   printf '%s=%s\n' "$key" "$val" >> "$tmp"
   mv "$tmp" "$file"
 }
+env_del() {
+  local key="$1" file="$INSTALL_DIR/.env"
+  [ -f "$file" ] || return 0
+  local tmp="${file}.tmp"
+  grep -v "^${key}=" "$file" > "$tmp" || true
+  mv "$tmp" "$file"
+}
 
 echo -e "\n${BOLD}${CYAN}  ╔══════════════════════════════════════╗${NC}"
 echo -e "${BOLD}${CYAN}  ║       $BRAND Installation          ║${NC}"
@@ -178,9 +185,10 @@ while true; do
         done
       fi
       env_set "OPENROUTER_API_KEY" "$CURRENT_OR_KEY"
-      # Clean up Ollama-specific settings
-      env_set "OLLAMA_BASE_URL" ""
-      env_set "OLLAMA_MODEL" ""
+      # Ollama-spezifische Keys entfernen (leere Werte wuerden Fallback-Chain stoeren)
+      env_del "OLLAMA_BASE_URL"
+      env_del "OLLAMA_MODEL"
+      env_del "LLM_API_KEY"
       ok "OpenRouter API-Key gespeichert"
 
       echo -e ""
