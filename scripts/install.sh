@@ -192,27 +192,35 @@ while true; do
       ok "OpenRouter API-Key gespeichert"
 
       echo -e ""
-      echo -e "  ${BOLD}Empfohlene Modelle:${NC}"
-      echo -e "    ${CYAN}1)${NC} anthropic/claude-sonnet-4    — Bestes Tool-Calling, deutsch"
-      echo -e "    ${CYAN}2)${NC} openai/gpt-4o                — Solides Function-Calling"
-      echo -e "    ${CYAN}3)${NC} google/gemini-2.5-pro        — Grosses Kontextfenster"
-      echo -e "    ${CYAN}4)${NC} meta-llama/llama-4-maverick  — Open-Source, guenstig"
-      echo -e "    ${CYAN}5)${NC} Eigene Eingabe"
+      echo -e "  ${BOLD}Modelle (kostenlos):${NC}"
+      echo -e "    ${CYAN}1)${NC} google/gemini-2.5-flash-preview:free    — Schnell, kostenlos ${GREEN}(empfohlen zum Start)${NC}"
+      echo -e "    ${CYAN}2)${NC} deepseek/deepseek-chat-v3-0324:free     — Stark, kostenlos"
+      echo -e "    ${CYAN}3)${NC} meta-llama/llama-4-maverick:free        — Open-Source, kostenlos"
+      echo -e ""
+      echo -e "  ${BOLD}Modelle (kostenpflichtig, Credits noetig):${NC}"
+      echo -e "    ${CYAN}4)${NC} anthropic/claude-sonnet-4               — Bestes Tool-Calling"
+      echo -e "    ${CYAN}5)${NC} openai/gpt-4o                           — Solides Allround-Modell"
+      echo -e "    ${CYAN}6)${NC} google/gemini-2.5-pro                   — Grosses Kontextfenster"
+      echo -e "    ${CYAN}7)${NC} Eigene Eingabe"
       echo -e ""
 
       CURRENT_MODEL="$(env_get LLM_MODEL)"
-      CURRENT_MODEL=${CURRENT_MODEL:-anthropic/claude-sonnet-4}
-      read -rp "  Auswahl [1-5] (default 1): " MODEL_CHOICE
-      MODEL_CHOICE="${MODEL_CHOICE:-1}"
-      case "$MODEL_CHOICE" in
-        1) SELECTED_MODEL="anthropic/claude-sonnet-4" ;;
-        2) SELECTED_MODEL="openai/gpt-4o" ;;
-        3) SELECTED_MODEL="google/gemini-2.5-pro" ;;
-        4) SELECTED_MODEL="meta-llama/llama-4-maverick" ;;
-        5) read -rp "  Modell-ID (provider/model): " SELECTED_MODEL
-           SELECTED_MODEL="${SELECTED_MODEL:-$CURRENT_MODEL}" ;;
-        *) SELECTED_MODEL="anthropic/claude-sonnet-4" ;;
-      esac
+      while true; do
+        read -rp "  Auswahl [1-7] (default 1): " MODEL_CHOICE
+        MODEL_CHOICE="${MODEL_CHOICE:-1}"
+        case "$MODEL_CHOICE" in
+          1) SELECTED_MODEL="google/gemini-2.5-flash-preview:free" ; break ;;
+          2) SELECTED_MODEL="deepseek/deepseek-chat-v3-0324:free" ; break ;;
+          3) SELECTED_MODEL="meta-llama/llama-4-maverick:free" ; break ;;
+          4) SELECTED_MODEL="anthropic/claude-sonnet-4" ; break ;;
+          5) SELECTED_MODEL="openai/gpt-4o" ; break ;;
+          6) SELECTED_MODEL="google/gemini-2.5-pro" ; break ;;
+          7) read -rp "  Modell-ID (provider/model): " SELECTED_MODEL
+             if [ -n "$SELECTED_MODEL" ]; then break; fi
+             warn "Modell-ID darf nicht leer sein." ;;
+          *) warn "Ungueltig — 1 bis 7 waehlen." ;;
+        esac
+      done
       env_set "LLM_MODEL" "$SELECTED_MODEL"
       ok "Modell: $SELECTED_MODEL"
       LLM_PROVIDER="remote"

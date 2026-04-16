@@ -17,7 +17,7 @@ export const LLM_BASE_URL = process.env.LLM_BASE_URL
 
 export const DEFAULT_MODEL = process.env.LLM_MODEL
   || process.env.OLLAMA_MODEL
-  || (_isLocal ? "qwen2.5:7b" : "anthropic/claude-sonnet-4");
+  || (_isLocal ? "qwen2.5:7b" : "google/gemini-2.5-flash-preview:free");
 
 export const VISION_MODEL = process.env.VISION_MODEL || DEFAULT_MODEL;
 
