@@ -116,7 +116,10 @@ export function resolveNotePath(nameOrPath: string): string | null {
       if (entry.isDirectory()) {
         const found = searchDir(full);
         if (found) return found;
-      } else if (entry.name === withExt || entry.name.includes(nameOrPath)) {
+      } else if (
+        entry.name === withExt ||
+        entry.name.toLowerCase() === withExt.toLowerCase()
+      ) {
         return full;
       }
     }

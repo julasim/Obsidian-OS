@@ -10,9 +10,7 @@ import {
 import type { ToolHandler } from "./handlers/index.js";
 
 export {
-  setReplyContext,
   getReplyFn,
-  setFileSendContext,
   getFileSendFn,
 } from "./context.js";
 

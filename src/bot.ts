@@ -2,7 +2,7 @@ import { Bot, InputFile } from "grammy";
 import { saveNote, isMainWorkspaceConfigured } from "./workspace/index.js";
 import { processMessage } from "./llm/runtime.js";
 import { processSetup, isSetupActive, activateSetup } from "./llm/setup.js";
-import { setReplyContext, setFileSendContext } from "./llm/executor.js";
+import { withCallContext } from "./llm/context.js";
 import { logError } from "./logger.js";
 import { enqueue } from "./queue.js";
 import { fmt, stripMarkdown } from "./format.js";
@@ -80,11 +80,15 @@ export function createBot(token: string): Bot {
       // Normal message -> agent
       const typing = withTyping(ctx);
       try {
-        setReplyContext((msg) => safeReply(ctx, msg).then(() => {}));
-        setFileSendContext(async (buffer, filename) => {
-          await ctx.replyWithDocument(new InputFile(new Uint8Array(buffer), filename));
-        });
-        const antwort = await processMessage(raw);
+        const antwort = await withCallContext(
+          {
+            replyFn: (msg) => safeReply(ctx, msg).then(() => {}),
+            fileSendFn: async (buffer, filename) => {
+              await ctx.replyWithDocument(new InputFile(new Uint8Array(buffer), filename));
+            },
+          },
+          () => processMessage(raw),
+        );
         await safeReply(ctx, antwort);
       } catch (err: unknown) {
         logError("LLM", err);
@@ -106,11 +110,15 @@ export function createBot(token: string): Bot {
     enqueue(chatId, async () => {
       const typing = withTyping(ctx);
       try {
-        setReplyContext((msg) => safeReply(ctx, msg).then(() => {}));
-        setFileSendContext(async (buffer, filename) => {
-          await ctx.replyWithDocument(new InputFile(new Uint8Array(buffer), filename));
-        });
-        const antwort = await processMessage(text);
+        const antwort = await withCallContext(
+          {
+            replyFn: (msg) => safeReply(ctx, msg).then(() => {}),
+            fileSendFn: async (buffer, filename) => {
+              await ctx.replyWithDocument(new InputFile(new Uint8Array(buffer), filename));
+            },
+          },
+          () => processMessage(text),
+        );
         await safeReply(ctx, antwort);
       } catch (err) {
         logError("LLM", err);

@@ -1,27 +1,39 @@
 /**
- * Shared runtime context — bricht zirkulaere Abhaengigkeiten
- * zwischen executor.ts und den Handler-Modulen.
+ * Per-Request Context via AsyncLocalStorage.
+ * Verhindert globale State-Kontamination bei parallelen Chat-Verarbeitungen.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 
-let _replyFn: ((text: string) => Promise<void>) | null = null;
-
-export function setReplyContext(fn: (text: string) => Promise<void>): void {
-  _replyFn = fn;
+interface CallContext {
+  replyFn: ((text: string) => Promise<void>) | null;
+  fileSendFn: ((buffer: Buffer, filename: string) => Promise<void>) | null;
 }
+
+const store = new AsyncLocalStorage<CallContext>();
+
+/**
+ * Fuehrt eine Funktion mit gebundenem Reply/FileSend-Context aus.
+ * Der Context propagiert automatisch durch die gesamte async-Kette —
+ * auch in Tool-Handlern die getReplyFn()/getFileSendFn() aufrufen.
+ */
+export function withCallContext<T>(ctx: Partial<CallContext>, fn: () => T): T {
+  return store.run(
+    {
+      replyFn: ctx.replyFn ?? null,
+      fileSendFn: ctx.fileSendFn ?? null,
+    },
+    fn,
+  );
+}
+
+// ---- Getter (fuer Handler) ----
 
 export function getReplyFn(): ((text: string) => Promise<void>) | null {
-  return _replyFn;
+  return store.getStore()?.replyFn ?? null;
 }
-
-// ---- File-Send Context (fuer PDF/DOCX-Export via Telegram) ----
 
 type FileSendFn = (buffer: Buffer, filename: string) => Promise<void>;
-let _fileSendFn: FileSendFn | null = null;
-
-export function setFileSendContext(fn: FileSendFn): void {
-  _fileSendFn = fn;
-}
 
 export function getFileSendFn(): FileSendFn | null {
-  return _fileSendFn;
+  return store.getStore()?.fileSendFn ?? null;
 }

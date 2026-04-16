@@ -1,5 +1,5 @@
 import fs from "fs";
-import { safePath } from "./helpers.js";
+import { safePath, atomicWriteSync } from "./helpers.js";
 
 /** Parse YAML frontmatter block from markdown content */
 export function parseFrontmatter(content: string): { data: Record<string, unknown>; body: string } {
@@ -75,6 +75,6 @@ export function upsertFrontmatterField(filepath: string, key: string, value: unk
   const content = fs.readFileSync(absPath, "utf-8");
   const { data, body } = parseFrontmatter(content);
   data[key] = value;
-  fs.writeFileSync(absPath, stringifyFrontmatter(data, body), "utf-8");
+  atomicWriteSync(absPath, stringifyFrontmatter(data, body));
   return true;
 }

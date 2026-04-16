@@ -28,7 +28,7 @@ export function saveNote(content: string, opts: SaveNoteOptions = {}): string {
   if (opts.ordner) {
     // Explicit folder path (safePath blocks traversal) — Bot entscheidet via CLAUDE.md
     const resolved = safePath(opts.ordner);
-    folder = resolved ?? path.join(workspacePath, resolveDir(workspacePath, INBOX_DIR));
+    folder = resolved ?? resolveDir(workspacePath, INBOX_DIR);
   } else if (opts.project) {
     folder = projectPath(opts.project, PROJECT_NOTES_SUBDIR);
   } else {

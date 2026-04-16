@@ -145,14 +145,21 @@ export async function processAgent(agentName: string, userMessage: string): Prom
     messages.push(...toolResults);
     for (const r of toolResults) totalChars += JSON.stringify(r).length;
 
-    // Pruning: keep assistant+tool pairs together (API requirement)
+    // Pruning: keep assistant+tool pairs together (API requirement).
+    // A tool message without its preceding assistant (which holds tool_calls) breaks the API.
     if (totalChars > MAX_HISTORY_CHARS) {
       const systemMsg = messages[0];
-      const recentStart = Math.max(1, messages.length - (KEPT_TOOL_MESSAGES * 3));
-      const recentMsgs = messages.slice(recentStart);
+      let cutPoint = Math.max(1, messages.length - (KEPT_TOOL_MESSAGES * 3));
+
+      // Walk backward: if cutPoint lands on a tool message, include its parent assistant
+      while (cutPoint > 1 && messages[cutPoint].role === "tool") {
+        cutPoint--;
+      }
+
+      const recentMsgs = messages.slice(cutPoint);
       // Preserve original user message if it would be pruned
       const firstUserIdx = messages.findIndex((m, idx) => idx > 0 && m.role === "user");
-      const firstUser = firstUserIdx > 0 && firstUserIdx < recentStart ? [messages[firstUserIdx]] : [];
+      const firstUser = firstUserIdx > 0 && firstUserIdx < cutPoint ? [messages[firstUserIdx]] : [];
       messages.splice(0, messages.length, systemMsg, ...firstUser, ...recentMsgs);
       totalChars = messages.reduce((s, m) => s + JSON.stringify(m).length, 0);
     }

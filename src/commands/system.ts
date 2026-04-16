@@ -5,6 +5,7 @@ import {
   inspectAgentWorkspace,
   clearAgentToday,
 } from "../workspace/index.js";
+import { LLM_BASE_URL, DEFAULT_MODEL } from "../config.js";
 import fs from "fs";
 
 const HILFE = `
@@ -46,8 +47,8 @@ Vault: ${vault ? "\u2713 erreichbar" : "\u2717 nicht gefunden"}
 Pfad: ${wp}
 Notizen (Inbox): ${inboxCount}
 
-LLM: ${process.env.LLM_BASE_URL || process.env.OLLAMA_BASE_URL || "https://openrouter.ai/api/v1"}
-Modell: ${process.env.LLM_MODEL || process.env.OLLAMA_MODEL || "anthropic/claude-sonnet-4"}
+LLM: ${LLM_BASE_URL}
+Modell: ${DEFAULT_MODEL}
 
 Chat-ID: ${chatId}  (fuer ALLOWED_CHAT_ID in .env)
   `.trim());

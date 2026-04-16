@@ -27,9 +27,6 @@ export const LLM_APP_URL = process.env.LLM_APP_URL ?? "";
 /** True wenn LLM auf localhost laeuft (Ollama) */
 export const LLM_IS_LOCAL = LLM_BASE_URL.includes("localhost") || LLM_BASE_URL.includes("127.0.0.1");
 
-// Backward-compat aliases (fuer bestehende Imports die OLLAMA_BASE_URL referenzieren)
-export const OLLAMA_BASE_URL = LLM_BASE_URL;
-
 // ── Whisper (lokal) ──────────────────────────────────────────────────────────
 export const WHISPER_MODEL = process.env.WHISPER_MODEL || "large-v3";
 export const WHISPER_LANG = process.env.WHISPER_LANG || "de";

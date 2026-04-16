@@ -1,13 +1,13 @@
 import fs from "fs";
 import path from "path";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import type { Context } from "grammy";
 import { WORKSPACE_PATH, VISION_MODEL, EXTRACT_MAX_CHARS, WHISPER_MODEL, WHISPER_LANG } from "./config.js";
 import { ensureDir, resolveDir } from "./workspace/helpers.js";
 import { logError, logInfo } from "./logger.js";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // Default-Fallback — Struktur wird primär via CLAUDE.md gesteuert.
 const ATTACHMENTS_DIR = process.env.ATTACHMENTS_DIR || "Attachments";
@@ -55,9 +55,16 @@ export async function handleVoice(ctx: Context): Promise<string> {
 
   try {
     // whisper schreibt {stem}.txt in --output_dir
-    const cmd = `whisper "${oggPath}" --model ${WHISPER_MODEL} --language ${WHISPER_LANG} --output_format txt --output_dir "${tmpDir}"`;
-    logInfo(`[Whisper] ${cmd}`);
-    await execAsync(cmd, { timeout: 120_000 }); // max 2 min
+    // execFile statt exec: verhindert Shell-Injection via Dateinamen
+    const whisperArgs = [
+      oggPath,
+      "--model", WHISPER_MODEL,
+      "--language", WHISPER_LANG,
+      "--output_format", "txt",
+      "--output_dir", tmpDir,
+    ];
+    logInfo(`[Whisper] whisper ${whisperArgs.join(" ")}`);
+    await execFileAsync("whisper", whisperArgs, { timeout: 120_000 }); // max 2 min
 
     if (!fs.existsSync(txtPath)) {
       throw new Error("Whisper hat keine .txt Datei erzeugt – ist whisper installiert? (pip install openai-whisper)");
