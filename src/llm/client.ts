@@ -1,6 +1,7 @@
 import { OpenRouter } from "@openrouter/sdk";
 import { LLM_BASE_URL, LLM_API_KEY, LLM_APP_NAME, LLM_APP_URL, LLM_IS_LOCAL, LOCALE, TIMEZONE } from "../config.js";
 import type { ToolSchema, ChatMessage, ChatResponse } from "./types.js";
+import { logError } from "../logger.js";
 
 // ── OpenRouter Client ──────────────────────────────────────────────────────────
 export const client = new OpenRouter({
@@ -61,16 +62,37 @@ function fromSdkChoice(choice: any): ChatResponse["choices"][0] {
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 export async function chatComplete(params: ChatCompleteParams): Promise<ChatResponse> {
-  const result = await client.chat.send({
-    chatRequest: {
-      model: params.model,
-      messages: toSdkMessages(params.messages) as any,
-      tools: params.tools as any,
-      toolChoice: params.tool_choice as any,
-      maxTokens: params.max_tokens ?? undefined,
-      stream: false,
-    },
-  });
+  let result;
+  try {
+    result = await client.chat.send({
+      chatRequest: {
+        model: params.model,
+        messages: toSdkMessages(params.messages) as any,
+        tools: params.tools as any,
+        toolChoice: params.tool_choice as any,
+        maxTokens: params.max_tokens ?? undefined,
+        stream: false,
+      },
+    });
+  } catch (err: unknown) {
+    // SDK wirft ResponseValidationError wenn die API-Antwort nicht zum Zod-Schema
+    // passt — haeufig bei Free-Tier-Modellen mit flakigem Tool-Calling oder bei
+    // Provider-Timeouts. Raw-Body ausgeben, sonst ist das nicht debugbar.
+    const e = err as { name?: string; rawValue?: unknown; cause?: unknown; constructor?: { name?: string } };
+    const isValidation =
+      e?.name === "ResponseValidationError" ||
+      e?.constructor?.name === "ResponseValidationError" ||
+      e?.rawValue !== undefined;
+    if (isValidation) {
+      try {
+        const raw = JSON.stringify(e.rawValue ?? e.cause, null, 0).slice(0, 4000);
+        logError("LLM-SDK", `ResponseValidationError raw=${raw}`);
+      } catch {
+        logError("LLM-SDK", "ResponseValidationError (raw body not serializable)");
+      }
+    }
+    throw err;
+  }
 
   return {
     choices: result.choices.map(fromSdkChoice),

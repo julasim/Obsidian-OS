@@ -276,37 +276,66 @@ else
   echo -e "     ${CYAN}rclone authorize \"onedrive\"${NC}  (rclone muss am PC installiert sein)"
   echo -e "     Im Browser anmelden — rclone zeigt einen JSON-Block ${CYAN}{...}${NC}"
   echo -e ""
-  echo -e "  ${BOLD}2. Token ${RED}manuell${NC}${BOLD} in .env eintragen${NC} (Terminal-Paste kappt bei 4095 Zeichen!)"
-  echo -e "     Nach dem Script-Ende:"
-  echo -e "       ${CYAN}nano $INSTALL_DIR/.env${NC}"
-  echo -e "     Zeile ${CYAN}RCLONE_TOKEN=${NC} suchen, kompletten JSON dahinter einfuegen"
-  echo -e "     ${CYAN}Ctrl+O Enter Ctrl+X${NC} speichern, dann:"
-  echo -e "       ${CYAN}docker compose restart${NC}"
+  echo -e "  ${BOLD}2. Token bereitstellen${NC} — zwei Optionen:"
+  echo -e "     ${CYAN}a)${NC} Komplettes JSON in eine Datei speichern, z.B. via"
+  echo -e "        ${CYAN}cat > /tmp/rclone-token.json${NC} + Paste + ${CYAN}Ctrl+D${NC}"
+  echo -e "        → dann hier den Pfad ${CYAN}/tmp/rclone-token.json${NC} eingeben"
+  echo -e "     ${CYAN}b)${NC} Direkt einfuegen (nur zuverlaessig wenn <4000 Zeichen)"
+  echo -e "     ${CYAN}c)${NC} Leer lassen — OneDrive bleibt deaktiviert, spaeter nachtragen"
   echo -e ""
-  read -rp "  Enter zum Fortfahren (oder spaeter manuell nachholen)... " _
 
-  echo -e ""
-  echo -e "  ${BOLD}OneDrive-Typ:${NC}"
-  echo -e "    ${CYAN}1)${NC} personal   — privates Microsoft-Konto (outlook.com, hotmail.com, live.com)"
-  echo -e "    ${CYAN}2)${NC} business   — Geschaefts-/Uni-Konto (Microsoft 365, SharePoint)"
-  echo -e "    ${CYAN}3)${NC} documentLibrary — SharePoint-Dokumentbibliothek"
-  while true; do
-    read -rp "  Auswahl [1/2/3] (default 2 = business): " DRIVE_TYPE_CHOICE
-    DRIVE_TYPE_CHOICE="${DRIVE_TYPE_CHOICE:-2}"
-    case "$DRIVE_TYPE_CHOICE" in
-      1) env_set "ONEDRIVE_DRIVE_TYPE" "personal"; ok "Typ: personal"; break;;
-      2) env_set "ONEDRIVE_DRIVE_TYPE" "business"; ok "Typ: business"; break;;
-      3) env_set "ONEDRIVE_DRIVE_TYPE" "documentLibrary"; ok "Typ: documentLibrary"; break;;
-      *) warn "Ungueltig — 1, 2 oder 3 waehlen";;
-    esac
-  done
+  RCLONE_TOKEN_VALUE=""
+  read -rp "  Pfad zu Token-Datei (oder leer fuer direkt-Paste/ueberspringen): " TOK_FILE
+  if [ -n "$TOK_FILE" ]; then
+    if [ -f "$TOK_FILE" ]; then
+      # Whitespace + Newlines raus (robuster JSON)
+      RCLONE_TOKEN_VALUE="$(tr -d '\r\n' < "$TOK_FILE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    else
+      warn "Datei nicht gefunden: $TOK_FILE"
+    fi
+  fi
 
-  echo -e ""
-  echo -e "  ${BOLD}Drive-ID${NC} (optional — wird sonst automatisch erkannt):"
-  read -rp "  Drive-ID: " DRIVE_ID_INPUT
-  if [ -n "$DRIVE_ID_INPUT" ]; then
-    env_set "ONEDRIVE_DRIVE_ID" "$DRIVE_ID_INPUT"
-    ok "Drive-ID gespeichert"
+  if [ -z "$RCLONE_TOKEN_VALUE" ]; then
+    read -rp "  Token direkt einfuegen (JSON, leer = spaeter): " RCLONE_TOKEN_VALUE
+  fi
+
+  if [ -n "$RCLONE_TOKEN_VALUE" ] && [ "${#RCLONE_TOKEN_VALUE}" -gt 200 ]; then
+    env_set "RCLONE_TOKEN" "$RCLONE_TOKEN_VALUE"
+    ok "Token gespeichert (${#RCLONE_TOKEN_VALUE} Zeichen)"
+    CURRENT_RCLONE_TOKEN="$RCLONE_TOKEN_VALUE"
+  elif [ -n "$RCLONE_TOKEN_VALUE" ]; then
+    warn "Token zu kurz (${#RCLONE_TOKEN_VALUE} Zeichen, erwartet >200) — ignoriert"
+    echo -e "     Spaeter nachtragen: ${CYAN}nano $INSTALL_DIR/.env${NC}"
+  else
+    warn "Kein Token — OneDrive bleibt deaktiviert."
+    echo -e "     Spaeter nachtragen: ${CYAN}nano $INSTALL_DIR/.env${NC} + ${CYAN}docker compose restart${NC}"
+  fi
+
+  # Drive-Typ + ID nur abfragen wenn Token da ist — sonst ist es unnoetig.
+  if [ -n "$CURRENT_RCLONE_TOKEN" ] && [ "${#CURRENT_RCLONE_TOKEN}" -gt 200 ]; then
+    echo -e ""
+    echo -e "  ${BOLD}OneDrive-Typ:${NC}"
+    echo -e "    ${CYAN}1)${NC} personal   — privates Microsoft-Konto (outlook.com, hotmail.com, live.com)"
+    echo -e "    ${CYAN}2)${NC} business   — Geschaefts-/Uni-Konto (Microsoft 365, SharePoint)"
+    echo -e "    ${CYAN}3)${NC} documentLibrary — SharePoint-Dokumentbibliothek"
+    while true; do
+      read -rp "  Auswahl [1/2/3] (default 2 = business): " DRIVE_TYPE_CHOICE
+      DRIVE_TYPE_CHOICE="${DRIVE_TYPE_CHOICE:-2}"
+      case "$DRIVE_TYPE_CHOICE" in
+        1) env_set "ONEDRIVE_DRIVE_TYPE" "personal"; ok "Typ: personal"; break;;
+        2) env_set "ONEDRIVE_DRIVE_TYPE" "business"; ok "Typ: business"; break;;
+        3) env_set "ONEDRIVE_DRIVE_TYPE" "documentLibrary"; ok "Typ: documentLibrary"; break;;
+        *) warn "Ungueltig — 1, 2 oder 3 waehlen";;
+      esac
+    done
+
+    echo -e ""
+    echo -e "  ${BOLD}Drive-ID${NC} (optional — wird sonst automatisch erkannt):"
+    read -rp "  Drive-ID: " DRIVE_ID_INPUT
+    if [ -n "$DRIVE_ID_INPUT" ]; then
+      env_set "ONEDRIVE_DRIVE_ID" "$DRIVE_ID_INPUT"
+      ok "Drive-ID gespeichert"
+    fi
   fi
 fi
 

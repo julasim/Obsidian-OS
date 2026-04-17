@@ -92,8 +92,24 @@ EOF
   done
 
   if ! mountpoint -q /vault 2>/dev/null; then
-    echo "[entrypoint] WARNUNG: OneDrive Mount fehlgeschlagen"
+    echo "[entrypoint] FEHLER: RCLONE_TOKEN gesetzt, aber /vault ist kein Mount."
+    echo "[entrypoint]         Rclone-Log oben pruefen (Token abgelaufen? Drive-Typ falsch? ONEDRIVE_VAULT_PATH?)"
+    echo "[entrypoint]         Bot startet NICHT (verhindert Schreiben ins Container-FS statt OneDrive)."
+    exit 1
   fi
+fi
+
+# ── Vault-Integritaet pruefen ───────────────────────────────────────────────
+# WORKSPACE_PATH=/vault ist der Docker-Default. Wenn nichts gemountet ist
+# (RCLONE_TOKEN leer oder Mount fehlgeschlagen) wuerde der Bot Notizen ins
+# Container-FS schreiben, die beim naechsten `docker compose down` verloren
+# gehen. Besser: laut scheitern.
+if [ "${WORKSPACE_PATH:-}" = "/vault" ] && ! mountpoint -q /vault 2>/dev/null; then
+  echo "[entrypoint] FEHLER: WORKSPACE_PATH=/vault, aber kein OneDrive-Mount aktiv."
+  echo "[entrypoint]         Ursache: RCLONE_TOKEN fehlt in .env (rclone authorize \"onedrive\" am PC + JSON in .env)."
+  echo "[entrypoint]         Bot startet NICHT — sonst landen Notizen im fluechtigen Container-FS."
+  echo "[entrypoint]         Override fuer dev: WORKSPACE_PATH in .env auf lokalen Pfad setzen."
+  exit 1
 fi
 
 # ── System-Daten-Pfad sicherstellen (Agent-State, Logs) ────────────────────
