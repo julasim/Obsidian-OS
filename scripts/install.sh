@@ -356,16 +356,21 @@ else
   echo -e "     ${CYAN}rclone authorize \"onedrive\"${NC}  (rclone muss am PC installiert sein)"
   echo -e "     Im Browser anmelden — rclone zeigt einen JSON-Block ${CYAN}{...}${NC}"
   echo -e ""
-  echo -e "  ${BOLD}2. Token bereitstellen${NC} — zwei Optionen:"
-  echo -e "     ${CYAN}a)${NC} Komplettes JSON in eine Datei speichern, z.B. via"
-  echo -e "        ${CYAN}cat > /tmp/rclone-token.json${NC} + Paste + ${CYAN}Ctrl+D${NC}"
-  echo -e "        → dann hier den Pfad ${CYAN}/tmp/rclone-token.json${NC} eingeben"
-  echo -e "     ${CYAN}b)${NC} Direkt einfuegen (nur zuverlaessig wenn <4000 Zeichen)"
-  echo -e "     ${CYAN}c)${NC} Leer lassen — OneDrive bleibt deaktiviert, spaeter nachtragen"
+  echo -e "  ${BOLD}2. Token bereitstellen${NC} — ${YELLOW}DRINGEND Datei-Methode nutzen${NC}:"
+  echo -e "     Direkt-Paste ins Terminal schneidet bei ${RED}4095 Zeichen${NC} ab"
+  echo -e "     (Linux canonical mode Limit) — OneDrive-Tokens sind oft laenger."
+  echo -e ""
+  echo -e "     ${BOLD}Datei-Methode (empfohlen):${NC}"
+  echo -e "       ${CYAN}cat > /tmp/rclone-token.json${NC}"
+  echo -e "       ${CYAN}<JSON hier paste>${NC}"
+  echo -e "       ${CYAN}Ctrl+D${NC}"
+  echo -e "     Dann hier ${CYAN}/tmp/rclone-token.json${NC} als Pfad eingeben."
+  echo -e ""
+  echo -e "     (Leer lassen = OneDrive jetzt skippen, spaeter via nano nachtragen)"
   echo -e ""
 
   RCLONE_TOKEN_VALUE=""
-  read -rp "  Pfad zu Token-Datei (oder leer fuer direkt-Paste/ueberspringen): " TOK_FILE
+  read -rp "  Pfad zu Token-Datei (leer = skippen): " TOK_FILE
   if [ -n "$TOK_FILE" ]; then
     if [ -f "$TOK_FILE" ]; then
       # Whitespace + Newlines raus (robuster JSON)
@@ -375,16 +380,20 @@ else
     fi
   fi
 
-  if [ -z "$RCLONE_TOKEN_VALUE" ]; then
-    read -rp "  Token direkt einfuegen (JSON, leer = spaeter): " RCLONE_TOKEN_VALUE
+  # Minimum: echte OneDrive-Tokens sind meist >2500 Zeichen.
+  # Exakt 4095 ist verdaechtig (Terminal-Limit) — ablehnen.
+  if [ -n "$RCLONE_TOKEN_VALUE" ] && [ "${#RCLONE_TOKEN_VALUE}" = "4095" ]; then
+    warn "Token ist EXAKT 4095 Zeichen — das ist das Linux-Terminal-Limit."
+    warn "Vermutlich wurde er beim Paste abgeschnitten. Bitte via Datei (Datei-Methode oben) neu einlesen."
+    RCLONE_TOKEN_VALUE=""
   fi
 
-  if [ -n "$RCLONE_TOKEN_VALUE" ] && [ "${#RCLONE_TOKEN_VALUE}" -gt 200 ]; then
+  if [ -n "$RCLONE_TOKEN_VALUE" ] && [ "${#RCLONE_TOKEN_VALUE}" -ge 2500 ]; then
     env_set "RCLONE_TOKEN" "$RCLONE_TOKEN_VALUE"
     ok "Token gespeichert (${#RCLONE_TOKEN_VALUE} Zeichen)"
     CURRENT_RCLONE_TOKEN="$RCLONE_TOKEN_VALUE"
   elif [ -n "$RCLONE_TOKEN_VALUE" ]; then
-    warn "Token zu kurz (${#RCLONE_TOKEN_VALUE} Zeichen, erwartet >200) — ignoriert"
+    warn "Token zu kurz (${#RCLONE_TOKEN_VALUE} Zeichen, erwartet >=2500) — vermutlich beschaedigt, ignoriert"
     echo -e "     Spaeter nachtragen: ${CYAN}nano $INSTALL_DIR/.env${NC}"
   else
     warn "Kein Token — OneDrive bleibt deaktiviert."

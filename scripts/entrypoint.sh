@@ -93,10 +93,15 @@ EOF
   } > /root/.config/rclone/rclone.conf
   chmod 600 /root/.config/rclone/rclone.conf
 
-  # Mount — Stderr in Log-Datei, damit wir bei Fail debuggen koennen
+  # Mount — Stderr in Log-Datei, damit wir bei Fail debuggen koennen.
+  # WICHTIG: rclone-Exitcode darf nicht `set -e` triggern, sonst bricht das
+  # Script hier ab und unsere Fehler-Diagnose unten wird nie erreicht.
+  # Das fuehrte zum heutigen "Crashloop ohne Logs"-Problem.
   VAULT_SUBPATH="${ONEDRIVE_VAULT_PATH:-}"
   echo "[entrypoint] Mounte onedrive:${VAULT_SUBPATH} -> /vault"
   RCLONE_LOG=/tmp/rclone-mount.log
+  : > "$RCLONE_LOG"
+  set +e
   rclone mount "onedrive:${VAULT_SUBPATH}" /vault \
     --vfs-cache-mode full \
     --vfs-cache-max-age 1h \
@@ -104,6 +109,11 @@ EOF
     --log-file "$RCLONE_LOG" \
     --log-level INFO \
     --daemon
+  RCLONE_EXIT=$?
+  set -e
+  if [ "$RCLONE_EXIT" != "0" ]; then
+    echo "[entrypoint] rclone mount (sync-phase) exited with $RCLONE_EXIT"
+  fi
 
   # Mount-Wait: 30s statt 15s (OneDrive OAuth + erster List-Call dauern)
   MOUNT_OK=0
