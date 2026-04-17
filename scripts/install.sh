@@ -192,13 +192,13 @@ while true; do
       ok "OpenRouter API-Key gespeichert"
 
       echo -e ""
-      echo -e "  ${BOLD}Modelle (kostenlos):${NC}"
-      echo -e "    ${CYAN}1)${NC} nvidia/nemotron-3-super-120b-a12b:free  — 120B, stark, kostenlos ${GREEN}(empfohlen zum Start)${NC}"
-      echo -e "    ${CYAN}2)${NC} google/gemini-2.5-flash-preview:free    — Schnell, kostenlos"
-      echo -e "    ${CYAN}3)${NC} deepseek/deepseek-chat-v3-0324:free     — Stark, kostenlos"
-      echo -e "    ${CYAN}4)${NC} meta-llama/llama-4-maverick:free        — Open-Source, kostenlos"
+      echo -e "  ${BOLD}Modelle (kostenlos — koennen jederzeit aus OpenRouter verschwinden):${NC}"
+      echo -e "    ${CYAN}1)${NC} google/gemini-2.5-flash-preview:free    — Schnell, robustes Tool-Calling ${GREEN}(empfohlen)${NC}"
+      echo -e "    ${CYAN}2)${NC} meta-llama/llama-3.3-70b-instruct:free  — Open-Source, stabil"
+      echo -e "    ${CYAN}3)${NC} mistralai/mistral-small-3.1-24b-instruct:free — Klein, schnell"
+      echo -e "    ${CYAN}4)${NC} nvidia/nemotron-3-super-120b-a12b:free  — 120B, ${YELLOW}Tool-Calling flakig${NC}"
       echo -e ""
-      echo -e "  ${BOLD}Modelle (kostenpflichtig, Credits noetig):${NC}"
+      echo -e "  ${BOLD}Modelle (kostenpflichtig, Credits noetig — deutlich stabiler):${NC}"
       echo -e "    ${CYAN}5)${NC} anthropic/claude-sonnet-4               — Bestes Tool-Calling"
       echo -e "    ${CYAN}6)${NC} openai/gpt-4o                           — Solides Allround-Modell"
       echo -e "    ${CYAN}7)${NC} google/gemini-2.5-pro                   — Grosses Kontextfenster"
@@ -210,10 +210,10 @@ while true; do
         read -rp "  Auswahl [1-8] (default 1): " MODEL_CHOICE
         MODEL_CHOICE="${MODEL_CHOICE:-1}"
         case "$MODEL_CHOICE" in
-          1) SELECTED_MODEL="nvidia/nemotron-3-super-120b-a12b:free" ; break ;;
-          2) SELECTED_MODEL="google/gemini-2.5-flash-preview:free" ; break ;;
-          3) SELECTED_MODEL="deepseek/deepseek-chat-v3-0324:free" ; break ;;
-          4) SELECTED_MODEL="meta-llama/llama-4-maverick:free" ; break ;;
+          1) SELECTED_MODEL="google/gemini-2.5-flash-preview:free" ; break ;;
+          2) SELECTED_MODEL="meta-llama/llama-3.3-70b-instruct:free" ; break ;;
+          3) SELECTED_MODEL="mistralai/mistral-small-3.1-24b-instruct:free" ; break ;;
+          4) SELECTED_MODEL="nvidia/nemotron-3-super-120b-a12b:free" ; break ;;
           5) SELECTED_MODEL="anthropic/claude-sonnet-4" ; break ;;
           6) SELECTED_MODEL="openai/gpt-4o" ; break ;;
           7) SELECTED_MODEL="google/gemini-2.5-pro" ; break ;;
@@ -223,6 +223,24 @@ while true; do
           *) warn "Ungueltig — 1 bis 8 waehlen." ;;
         esac
       done
+
+      # Live-Check: hat das Modell ueberhaupt aktive Endpoints auf OpenRouter?
+      # (Deckt ab: Modell wurde entfernt, Free-Tier deaktiviert, Typo.)
+      echo -e "  > Pruefe Modell-Verfuegbarkeit..."
+      MODEL_CHECK=$(curl -s -m 10 "https://openrouter.ai/api/v1/models/${SELECTED_MODEL}/endpoints" 2>/dev/null || echo "")
+      if echo "$MODEL_CHECK" | grep -q '"No endpoints found"\|"error"'; then
+        warn "OpenRouter liefert keine aktiven Endpoints fuer $SELECTED_MODEL"
+        warn "Modell scheint entfernt/deaktiviert. Waehle ein anderes oder pruefe https://openrouter.ai/models"
+        read -rp "  Trotzdem speichern? (y/N): " FORCE_SAVE
+        if [[ ! "$FORCE_SAVE" =~ ^[yY]$ ]]; then
+          continue 2>/dev/null || { warn "Bitte Script neu starten und anderes Modell waehlen."; exit 1; }
+        fi
+      elif [ -z "$MODEL_CHECK" ]; then
+        warn "OpenRouter-Check nicht moeglich (Netzwerk?) — ueberspringe Validierung"
+      else
+        ok "Modell verfuegbar"
+      fi
+
       env_set "LLM_MODEL" "$SELECTED_MODEL"
       ok "Modell: $SELECTED_MODEL"
       LLM_PROVIDER="remote"
