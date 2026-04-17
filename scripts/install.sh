@@ -267,19 +267,39 @@ while true; do
       env_del "LLM_BASE_URL"
       ok "OpenRouter API-Key gespeichert"
 
-      # ── Modell-Auswahl: live von OpenRouter ───────────────────────
-      # Statt hardcodierter Liste (wird stale, Bsp. gemini-2.5-flash-preview:free
-      # wurde ohne Vorwarnung zu gemini-2.5-flash:free umbenannt), hole die
-      # tatsaechlich aktuell verfuegbaren :free-Modelle direkt von der API.
+      # ── Modell-Auswahl: live von OpenRouter, gefiltert auf Tool-Support ──
+      # Statt hardcodierter Liste (wird stale) + ohne Tool-Support-Filter
+      # (vorher wurde z.B. liquid/lfm-2.5-1.2b-instruct:free angeboten, das
+      # Tool-Calling nicht unterstuetzt → Bot crasht sofort im Setup),
+      # hole die API live und filtere nach `supported_parameters` enthält "tools".
       echo -e ""
-      echo -e "  > Hole aktive :free-Modelle von OpenRouter..."
+      echo -e "  > Hole Tool-faehige :free-Modelle von OpenRouter..."
       MODELS_JSON=$(curl -s -m 15 -H "Authorization: Bearer $CURRENT_OR_KEY" \
         "https://openrouter.ai/api/v1/models" 2>/dev/null || echo "")
 
-      # Free-Modelle extrahieren. OpenRouter liefert ein Array in .data;
-      # jedes Model hat "id" mit ":free"-Suffix fuer Gratis-Varianten.
       FREE_MODELS=()
-      if [ -n "$MODELS_JSON" ]; then
+      if [ -n "$MODELS_JSON" ] && command -v python3 >/dev/null 2>&1; then
+        # Python3 parse ist robust (handled nested arrays, quotes escapes etc.);
+        # reiner grep kommt bei supported_parameters nicht durch.
+        while IFS= read -r id; do
+          [ -n "$id" ] && FREE_MODELS+=("$id")
+        done < <(echo "$MODELS_JSON" | python3 -c '
+import sys, json
+try:
+    data = json.load(sys.stdin).get("data", [])
+except Exception:
+    sys.exit(0)
+for m in data:
+    mid = m.get("id", "")
+    if not mid.endswith(":free"):
+        continue
+    params = m.get("supported_parameters") or []
+    if "tools" in params:
+        print(mid)
+' 2>/dev/null | sort -u)
+      elif [ -n "$MODELS_JSON" ]; then
+        # Kein python3 → grep-Fallback (kann Tool-Support nicht pruefen)
+        warn "python3 fehlt — kann Tool-Support nicht pruefen, zeige alle :free"
         while IFS= read -r id; do
           [ -n "$id" ] && FREE_MODELS+=("$id")
         done < <(echo "$MODELS_JSON" \
@@ -288,7 +308,8 @@ while true; do
           | sort -u)
       fi
 
-      # Fallback wenn API nicht erreichbar war
+      # Fallback wenn API nicht erreichbar war (diese Modelle hatten Tool-Support
+      # Stand April 2026 — koennen sich aendern, daher nur als letzte Reserve)
       if [ ${#FREE_MODELS[@]} -eq 0 ]; then
         warn "OpenRouter /models nicht erreichbar oder leer — nutze minimale Fallback-Liste"
         FREE_MODELS=(
@@ -297,7 +318,7 @@ while true; do
           "mistralai/mistral-small-3.1-24b-instruct:free"
         )
       else
-        ok "${#FREE_MODELS[@]} :free-Modelle gefunden"
+        ok "${#FREE_MODELS[@]} Tool-faehige :free-Modelle gefunden"
       fi
 
       # Paid-Modelle sind stabiler und bekannt — handkuratiert reicht
