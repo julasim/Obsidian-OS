@@ -267,58 +267,130 @@ while true; do
       env_del "LLM_BASE_URL"
       ok "OpenRouter API-Key gespeichert"
 
+      # ── Modell-Auswahl: live von OpenRouter ───────────────────────
+      # Statt hardcodierter Liste (wird stale, Bsp. gemini-2.5-flash-preview:free
+      # wurde ohne Vorwarnung zu gemini-2.5-flash:free umbenannt), hole die
+      # tatsaechlich aktuell verfuegbaren :free-Modelle direkt von der API.
       echo -e ""
-      echo -e "  ${BOLD}Modelle (kostenlos — koennen jederzeit aus OpenRouter verschwinden):${NC}"
-      echo -e "    ${CYAN}1)${NC} google/gemini-2.5-flash-preview:free    — Schnell, robustes Tool-Calling ${GREEN}(empfohlen)${NC}"
-      echo -e "    ${CYAN}2)${NC} meta-llama/llama-3.3-70b-instruct:free  — Open-Source, stabil"
-      echo -e "    ${CYAN}3)${NC} mistralai/mistral-small-3.1-24b-instruct:free — Klein, schnell"
-      echo -e "    ${CYAN}4)${NC} nvidia/nemotron-3-super-120b-a12b:free  — 120B, ${YELLOW}Tool-Calling flakig${NC}"
+      echo -e "  > Hole aktive :free-Modelle von OpenRouter..."
+      MODELS_JSON=$(curl -s -m 15 -H "Authorization: Bearer $CURRENT_OR_KEY" \
+        "https://openrouter.ai/api/v1/models" 2>/dev/null || echo "")
+
+      # Free-Modelle extrahieren. OpenRouter liefert ein Array in .data;
+      # jedes Model hat "id" mit ":free"-Suffix fuer Gratis-Varianten.
+      FREE_MODELS=()
+      if [ -n "$MODELS_JSON" ]; then
+        while IFS= read -r id; do
+          [ -n "$id" ] && FREE_MODELS+=("$id")
+        done < <(echo "$MODELS_JSON" \
+          | grep -oE '"id":"[^"]*:free"' \
+          | sed 's/^"id":"//;s/"$//' \
+          | sort -u)
+      fi
+
+      # Fallback wenn API nicht erreichbar war
+      if [ ${#FREE_MODELS[@]} -eq 0 ]; then
+        warn "OpenRouter /models nicht erreichbar oder leer — nutze minimale Fallback-Liste"
+        FREE_MODELS=(
+          "google/gemini-2.5-flash:free"
+          "meta-llama/llama-3.3-70b-instruct:free"
+          "mistralai/mistral-small-3.1-24b-instruct:free"
+        )
+      else
+        ok "${#FREE_MODELS[@]} :free-Modelle gefunden"
+      fi
+
+      # Paid-Modelle sind stabiler und bekannt — handkuratiert reicht
+      PAID_MODELS=(
+        "anthropic/claude-sonnet-4"
+        "openai/gpt-4o"
+        "google/gemini-2.5-pro"
+      )
+
       echo -e ""
-      echo -e "  ${BOLD}Modelle (kostenpflichtig, Credits noetig — deutlich stabiler):${NC}"
-      echo -e "    ${CYAN}5)${NC} anthropic/claude-sonnet-4               — Bestes Tool-Calling"
-      echo -e "    ${CYAN}6)${NC} openai/gpt-4o                           — Solides Allround-Modell"
-      echo -e "    ${CYAN}7)${NC} google/gemini-2.5-pro                   — Grosses Kontextfenster"
-      echo -e "    ${CYAN}8)${NC} Eigene Eingabe"
+      echo -e "  ${BOLD}Kostenlos (live von OpenRouter):${NC}"
+      for i in "${!FREE_MODELS[@]}"; do
+        printf "    ${CYAN}%2d)${NC} %s\n" "$((i + 1))" "${FREE_MODELS[$i]}"
+      done
+      FREE_COUNT=${#FREE_MODELS[@]}
+      PAID_START=$((FREE_COUNT + 1))
+      echo -e ""
+      echo -e "  ${BOLD}Kostenpflichtig (Credits noetig — stabiler, besseres Tool-Calling):${NC}"
+      for i in "${!PAID_MODELS[@]}"; do
+        printf "    ${CYAN}%2d)${NC} %s\n" "$((PAID_START + i))" "${PAID_MODELS[$i]}"
+      done
+      CUSTOM_IDX=$((PAID_START + ${#PAID_MODELS[@]}))
+      printf "    ${CYAN}%2d)${NC} Eigene Modell-ID eingeben\n" "$CUSTOM_IDX"
+      MAX_CHOICE=$CUSTOM_IDX
       echo -e ""
 
-      # Modell-Auswahl + Live-Check: neue Auswahl falls Modell tot.
-      # Outer loop = Retry-Schleife; inner case = Auswahl.
+      # Modell-Auswahl + Live-Check (Endpoints existieren + Modell-ID valide)
       MODEL_SELECTED=0
       while [ "$MODEL_SELECTED" = "0" ]; do
-        read -rp "  Auswahl [1-8] (default 1): " MODEL_CHOICE
+        read -rp "  Auswahl [1-${MAX_CHOICE}] (default 1): " MODEL_CHOICE
         MODEL_CHOICE="${MODEL_CHOICE:-1}"
-        case "$MODEL_CHOICE" in
-          1) SELECTED_MODEL="google/gemini-2.5-flash-preview:free" ;;
-          2) SELECTED_MODEL="meta-llama/llama-3.3-70b-instruct:free" ;;
-          3) SELECTED_MODEL="mistralai/mistral-small-3.1-24b-instruct:free" ;;
-          4) SELECTED_MODEL="nvidia/nemotron-3-super-120b-a12b:free" ;;
-          5) SELECTED_MODEL="anthropic/claude-sonnet-4" ;;
-          6) SELECTED_MODEL="openai/gpt-4o" ;;
-          7) SELECTED_MODEL="google/gemini-2.5-pro" ;;
-          8) read -rp "  Modell-ID (provider/model): " SELECTED_MODEL
-             [ -z "$SELECTED_MODEL" ] && { warn "Modell-ID darf nicht leer sein."; continue; } ;;
-          *) warn "Ungueltig — 1 bis 8 waehlen."; continue ;;
-        esac
 
-        # Live-Check gegen OpenRouter. Statt lose "error"-Grep:
-        # Positiv-Check auf "endpoints":[...] mit Laenge>0.
-        echo -e "  > Pruefe $SELECTED_MODEL ..."
-        MODEL_CHECK=$(curl -s -m 10 "https://openrouter.ai/api/v1/models/${SELECTED_MODEL}/endpoints" 2>/dev/null || echo "")
-        if [ -z "$MODEL_CHECK" ]; then
-          warn "OpenRouter-Check nicht moeglich (Netzwerk?) — ueberspringe Validierung"
-          MODEL_SELECTED=1
-        elif echo "$MODEL_CHECK" | grep -q '"No endpoints found"'; then
-          warn "OpenRouter: Modell entfernt oder ohne aktive Endpoints — bitte anderes waehlen."
-          echo -e "  Siehe ${CYAN}https://openrouter.ai/models${NC}"
-          # Schleife laeuft weiter
-        elif echo "$MODEL_CHECK" | grep -q '"endpoints"\s*:\s*\['; then
-          ok "Modell verfuegbar"
-          MODEL_SELECTED=1
-        else
-          # Unerwarteter Response — nicht hart scheitern, aber flaggen
-          warn "Unerwartete OpenRouter-Antwort — nutze Modell trotzdem"
-          MODEL_SELECTED=1
+        if ! [[ "$MODEL_CHOICE" =~ ^[0-9]+$ ]]; then
+          warn "Bitte eine Zahl eingeben."; continue
         fi
+
+        if [ "$MODEL_CHOICE" -ge 1 ] && [ "$MODEL_CHOICE" -le "$FREE_COUNT" ]; then
+          SELECTED_MODEL="${FREE_MODELS[$((MODEL_CHOICE - 1))]}"
+        elif [ "$MODEL_CHOICE" -ge "$PAID_START" ] && [ "$MODEL_CHOICE" -lt "$CUSTOM_IDX" ]; then
+          SELECTED_MODEL="${PAID_MODELS[$((MODEL_CHOICE - PAID_START))]}"
+        elif [ "$MODEL_CHOICE" = "$CUSTOM_IDX" ]; then
+          read -rp "  Modell-ID (provider/model): " SELECTED_MODEL
+          [ -z "$SELECTED_MODEL" ] && { warn "Modell-ID darf nicht leer sein."; continue; }
+        else
+          warn "Ungueltig — 1 bis ${MAX_CHOICE} waehlen."; continue
+        fi
+
+        # Validierung mit HTTP-Code, nicht body-grep.
+        # HTTP 400 → Modell-ID invalid (das war der bisher unerkannte Fall).
+        # HTTP 404 → Modell existiert nicht.
+        # HTTP 200 + empty endpoints → Modell hat aktuell keine Provider.
+        # HTTP 200 + endpoints Array → verfuegbar.
+        echo -e "  > Pruefe $SELECTED_MODEL ..."
+        TMP_CHECK=$(mktemp)
+        HTTP_CODE=$(curl -s -m 10 \
+          -H "Authorization: Bearer $CURRENT_OR_KEY" \
+          -o "$TMP_CHECK" -w "%{http_code}" \
+          "https://openrouter.ai/api/v1/models/${SELECTED_MODEL}/endpoints" \
+          2>/dev/null || echo "000")
+        BODY="$(cat "$TMP_CHECK" 2>/dev/null || echo "")"
+        rm -f "$TMP_CHECK"
+
+        case "$HTTP_CODE" in
+          200)
+            if echo "$BODY" | grep -qE '"endpoints"\s*:\s*\[\s*\]'; then
+              warn "Modell hat aktuell 0 Provider-Endpoints — bitte anderes waehlen."
+            elif echo "$BODY" | grep -qE '"endpoints"\s*:\s*\['; then
+              ok "Modell verfuegbar"
+              MODEL_SELECTED=1
+            else
+              warn "Unerwarteter 200-Body — nutze Modell trotzdem"
+              MODEL_SELECTED=1
+            fi
+            ;;
+          400|404)
+            warn "OpenRouter HTTP $HTTP_CODE: Modell-ID ungueltig oder entfernt."
+            # Fehlermeldung auszugweise zeigen
+            MSG=$(echo "$BODY" | grep -oE '"message":"[^"]*"' | head -1 | sed 's/^"message":"//;s/"$//')
+            [ -n "$MSG" ] && echo "    → $MSG"
+            ;;
+          401|403)
+            warn "OpenRouter HTTP $HTTP_CODE — API-Key ungueltig?"
+            break 2  # raus aus model-loop + provider-loop; nutzer muss neu starten
+            ;;
+          000)
+            warn "OpenRouter nicht erreichbar (Netzwerk?) — nutze Modell ohne Pruefung"
+            MODEL_SELECTED=1
+            ;;
+          *)
+            warn "OpenRouter HTTP $HTTP_CODE — unerwartet, nutze Modell trotzdem"
+            MODEL_SELECTED=1
+            ;;
+        esac
       done
 
       env_set "LLM_MODEL" "$SELECTED_MODEL"
