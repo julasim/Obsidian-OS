@@ -71,7 +71,18 @@ if [ "$NEW_COMMITS" = "0" ] && [ "${FORCE_BUILD:-0}" != "1" ]; then
   BUILD_SKIPPED=1
 else
   echo "  > docker compose build..."
-  docker compose build --pull 2>&1 | grep -vE "^#|^$" || true
+  # Wichtig: Build-Fehler MUESSEN scheitern lassen. `| grep … || true`
+  # maskiert Build-Fails. Stattdessen in Tempfile + PIPESTATUS-Check.
+  BUILD_LOG=$(mktemp)
+  if ! docker compose build --pull 2>&1 | tee "$BUILD_LOG" | grep -vE "^#|^$"; then
+    # grep exit 1 == kein Treffer; Build-Status steht in PIPESTATUS[0]
+    :
+  fi
+  if [ "${PIPESTATUS[0]:-0}" != "0" ]; then
+    rm -f "$BUILD_LOG"
+    fail "docker compose build fehlgeschlagen — siehe Output oben"
+  fi
+  rm -f "$BUILD_LOG"
   ok "Image gebaut"
   BUILD_SKIPPED=0
 fi
@@ -93,14 +104,21 @@ fi
 # ── 4. Health-Check ─────────────────────────────────────────────────────────
 step "4/5  Health-Check"
 
+# Helper: .env-Wert lesen mit CR-strip (CRLF-Schutz fuer Windows-editierte .env)
+env_get() {
+  grep -E "^$1=" "$PROJECT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r'
+}
+
 # LLM-Provider erkennen
-LLM_KEY=$(grep -E "^(LLM_API_KEY|OPENROUTER_API_KEY)=" "$PROJECT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)
-LLM_URL=$(grep -E "^LLM_BASE_URL=" "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2-)
+LLM_KEY_OR="$(env_get OPENROUTER_API_KEY)"
+LLM_KEY_GEN="$(env_get LLM_API_KEY)"
+LLM_URL="$(env_get LLM_BASE_URL)"
 USES_LOCAL=false
-if [ -z "$LLM_KEY" ] || [ "$LLM_KEY" = "ollama" ]; then
+if [ -z "$LLM_KEY_OR" ] && { [ -z "$LLM_KEY_GEN" ] || [ "$LLM_KEY_GEN" = "ollama" ]; }; then
   USES_LOCAL=true
-elif echo "$LLM_URL" | grep -qE "localhost|127\.0\.0\.1"; then
-  USES_LOCAL=true
+elif [ -n "$LLM_URL" ] && echo "$LLM_URL" | grep -qE "localhost|127\.0\.0\.1"; then
+  # Nur wenn auch wirklich kein Remote-Key gesetzt ist
+  [ -z "$LLM_KEY_OR" ] && [ -z "$LLM_KEY_GEN" ] && USES_LOCAL=true
 fi
 
 if [ "$USES_LOCAL" = "true" ]; then
@@ -116,28 +134,29 @@ if [ "$USES_LOCAL" = "true" ]; then
   done
   [ "$OLLAMA_OK" = "0" ] && warn "Ollama antwortet nicht — ggf. 'docker compose exec bot ollama signin'"
 else
-  LLM_MODEL=$(grep -E "^LLM_MODEL=" "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2-)
+  LLM_MODEL="$(env_get LLM_MODEL)"
   ok "Remote LLM-Provider (${LLM_MODEL:-auto})"
 fi
 
 # OneDrive Mount pruefen (falls konfiguriert)
-if grep -q "^RCLONE_TOKEN=." "$PROJECT_DIR/.env" 2>/dev/null; then
+RCLONE_TOKEN_VAL="$(env_get RCLONE_TOKEN)"
+if [ -n "$RCLONE_TOKEN_VAL" ] && [ "${#RCLONE_TOKEN_VAL}" -gt 200 ]; then
   echo "  > Pruefe OneDrive Mount..."
   sleep 3  # Mount braucht Zeit
   if docker compose exec -T bot mountpoint -q /vault 2>/dev/null; then
     FILE_COUNT=$(docker compose exec -T bot ls /vault 2>/dev/null | wc -l)
     ok "OneDrive gemountet ($FILE_COUNT Eintraege unter /vault)"
   else
-    warn "OneDrive NICHT gemountet — Logs: docker compose logs bot | grep -i onedrive"
-    # Haeufigste Ursachen anzeigen
-    TOKEN_LEN=$(grep "^RCLONE_TOKEN=" "$PROJECT_DIR/.env" | cut -d= -f2- | wc -c)
-    DRIVE_TYPE=$(grep "^ONEDRIVE_DRIVE_TYPE=" "$PROJECT_DIR/.env" | cut -d= -f2-)
+    warn "OneDrive NICHT gemountet — Logs: docker compose logs bot | grep -iE 'onedrive|rclone'"
+    DRIVE_TYPE="$(env_get ONEDRIVE_DRIVE_TYPE)"
     echo -e "    ${CYAN}Diagnose:${NC}"
-    echo -e "      RCLONE_TOKEN Laenge: $TOKEN_LEN (erwartet >4100)"
+    echo -e "      RCLONE_TOKEN Laenge: ${#RCLONE_TOKEN_VAL} (erwartet >4000)"
     echo -e "      ONEDRIVE_DRIVE_TYPE: ${DRIVE_TYPE:-<leer>}  (personal|business|documentLibrary)"
-    [ "$TOKEN_LEN" -lt 4100 ] && echo -e "      ${YELLOW}→ Token vermutlich abgeschnitten — nano .env neu eintragen${NC}"
+    [ "${#RCLONE_TOKEN_VAL}" -lt 4000 ] && echo -e "      ${YELLOW}→ Token vermutlich abgeschnitten — nano .env neu eintragen${NC}"
     [ -z "$DRIVE_TYPE" ] && echo -e "      ${YELLOW}→ DRIVE_TYPE fehlt — nano .env setzen (business fuer Microsoft 365)${NC}"
   fi
+elif [ -n "$RCLONE_TOKEN_VAL" ]; then
+  warn "RCLONE_TOKEN in .env aber zu kurz (${#RCLONE_TOKEN_VAL} Zeichen) — vermutlich abgeschnitten"
 else
   warn "Kein RCLONE_TOKEN in .env — OneDrive uebersprungen"
 fi

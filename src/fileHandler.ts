@@ -12,6 +12,10 @@ const execFileAsync = promisify(execFile);
 // Default-Fallback — Struktur wird primär via CLAUDE.md gesteuert.
 const ATTACHMENTS_DIR = process.env.ATTACHMENTS_DIR || "Attachments";
 
+// Telegram-Limit fuer Bot-Download ist 20 MB; wir setzen etwas drunter.
+// Schuetzt vor OOM durch grosse Dokumente/Voice-Nachrichten.
+const MAX_FILE_BYTES = Number(process.env.MAX_FILE_BYTES ?? 20 * 1024 * 1024);
+
 // ---- Helpers ----
 
 function attachmentsDir(): string {
@@ -20,11 +24,63 @@ function attachmentsDir(): string {
   return dir;
 }
 
+/** Token-redacted URL fuer Error-Messages — sonst leakt der Bot-Token in Logs/Telegram. */
+function redactUrl(url: string): string {
+  return url.replace(/\/bot[^/]+\//, "/bot<TOKEN>/");
+}
+
+/** Sanitiert einen von Telegram gelieferten Dateinamen:
+ *  - path.basename entfernt alle Pfadteile (schuetzt gegen "../../../etc/passwd")
+ *  - verbotene Zeichen werden zu "-"
+ *  - Laenge wird begrenzt */
+function sanitizeFilename(name: string, fallback: string): string {
+  const base = path.basename(name || "").replace(/[\\/:*?"<>|]/g, "-").trim();
+  const safe = base.slice(0, 120);
+  return safe || fallback;
+}
+
 async function downloadFile(url: string): Promise<Buffer> {
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} beim Download`);
-  const arrayBuffer = await resp.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  let resp: Response;
+  try {
+    resp = await fetch(url);
+  } catch (err) {
+    // Fehler koennte URL im Message enthalten — redacten
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Download-Fehler: ${msg.replace(/\/bot[^/]+\//, "/bot<TOKEN>/")}`);
+  }
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} beim Download von ${redactUrl(url)}`);
+
+  // Content-Length pruefen bevor wir den Body laden
+  const lenHdr = resp.headers.get("content-length");
+  if (lenHdr !== null) {
+    const len = Number(lenHdr);
+    if (Number.isFinite(len) && len > MAX_FILE_BYTES) {
+      throw new Error(`Datei zu gross: ${len} bytes (max ${MAX_FILE_BYTES})`);
+    }
+  }
+
+  // Streaming-Read mit Size-Guard. arrayBuffer() laedt alles auf einmal und
+  // wuerde auch ohne Content-Length OOMs riskieren.
+  const reader = resp.body?.getReader();
+  if (!reader) {
+    // Fallback fuer Runtimes ohne ReadableStream
+    const ab = await resp.arrayBuffer();
+    if (ab.byteLength > MAX_FILE_BYTES) throw new Error(`Datei zu gross: ${ab.byteLength} bytes`);
+    return Buffer.from(ab);
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_FILE_BYTES) {
+      try { await reader.cancel(); } catch { /* ignore */ }
+      throw new Error(`Datei zu gross: >${MAX_FILE_BYTES} bytes (abgebrochen)`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
 }
 
 // ---- Voice Handler ----
@@ -91,7 +147,9 @@ export async function handlePhoto(ctx: Context): Promise<string> {
   const fileUrl = `https://api.telegram.org/file/bot${ctx.api.token}/${file.file_path}`;
 
   const buffer = await downloadFile(fileUrl);
-  const ext = file.file_path?.split(".").pop() || "jpg";
+  const rawExt = file.file_path?.split(".").pop() || "jpg";
+  // Extension whitelist: nur alphanumerisch, kurz
+  const ext = /^[a-zA-Z0-9]{1,8}$/.test(rawExt) ? rawExt.toLowerCase() : "jpg";
   const savePath = path.join(attachmentsDir(), `photo_${Date.now()}.${ext}`);
   fs.writeFileSync(savePath, buffer);
 
@@ -141,7 +199,9 @@ export async function handleDocument(ctx: Context): Promise<string> {
   const fileUrl = `https://api.telegram.org/file/bot${ctx.api.token}/${file.file_path}`;
 
   const buffer = await downloadFile(fileUrl);
-  const filename = doc.file_name || `doc_${Date.now()}`;
+  // doc.file_name kommt vom Client — NIEMALS direkt in path.join,
+  // sonst erlaubt "../../../etc/cron.d/pwn" Path-Traversal aus dem Vault.
+  const filename = sanitizeFilename(doc.file_name ?? "", `doc_${Date.now()}`);
   const savePath = path.join(attachmentsDir(), filename);
   fs.writeFileSync(savePath, buffer);
 

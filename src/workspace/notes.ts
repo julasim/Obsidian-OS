@@ -91,7 +91,12 @@ export function appendToNote(nameOrPath: string, content: string): boolean {
   if (!filepath) return false;
   const now = new Date();
   const time = now.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
-  fs.appendFileSync(filepath, `\n**Nachtrag ${time}:** ${content}\n`, "utf-8");
+  // Atomic: lesen + neu schreiben. appendFileSync ist nicht atomar — wenn
+  // OneDrive-Sync mitten im Append feuert, kann es zu Duplikaten oder
+  // Mixed-State-Lesungen kommen.
+  const existing = fs.readFileSync(filepath, "utf-8");
+  const appended = existing + `\n**Nachtrag ${time}:** ${content}\n`;
+  atomicWriteSync(filepath, appended);
   return true;
 }
 

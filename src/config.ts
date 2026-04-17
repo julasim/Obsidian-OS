@@ -1,23 +1,30 @@
 import "dotenv/config";
 import path from "path";
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+// trim + CR-strip: schuetzt gegen CRLF-editierte .env, trailing spaces nach Paste.
+const env = (k: string): string => (process.env[k] ?? "").replace(/\r/g, "").trim();
+
 // ── LLM (Provider-agnostisch: OpenRouter / Ollama / OpenAI / etc.) ───────────
-// Priority-Chain: LLM_* > OPENROUTER_* > OLLAMA_* > Smart-Default
-// || statt ?? — leere Strings in .env (z.B. OLLAMA_BASE_URL=) sollen als "nicht gesetzt" gelten.
-export const LLM_API_KEY = process.env.LLM_API_KEY
-  || process.env.OPENROUTER_API_KEY
-  || process.env.OLLAMA_API_KEY
-  || "ollama";
+// Priority-Chain: LLM_* > OPENROUTER_* > Ollama-Fallback
+//
+// Kritisch: frueher fiel LLM_API_KEY auf "ollama" zurueck wenn alle leer waren,
+// was bei gesetztem LLM_BASE_URL=https://openrouter.ai/... zu einem 401 fuehrte
+// (Key="ollama" an OpenRouter geschickt). Jetzt: _isLocal wird sauber aus
+// OLLAMA_BASE_URL oder localhost-URL abgeleitet, nicht aus dem Key-Fallback.
+const _llmKey = env("LLM_API_KEY");
+const _orKey = env("OPENROUTER_API_KEY");
+const _ollamaBase = env("OLLAMA_BASE_URL");
+const _llmBase = env("LLM_BASE_URL");
 
-const _isLocal = LLM_API_KEY === "ollama";
+const _isLocal =
+  _ollamaBase !== "" ||
+  (_llmBase !== "" && /^https?:\/\/(localhost|127\.0\.0\.1)/.test(_llmBase)) ||
+  (_llmKey === "ollama");
 
-export const LLM_BASE_URL = process.env.LLM_BASE_URL
-  || process.env.OLLAMA_BASE_URL
-  || (_isLocal ? "http://localhost:11434/v1" : "https://openrouter.ai/api/v1");
-
-export const DEFAULT_MODEL = process.env.LLM_MODEL
-  || process.env.OLLAMA_MODEL
-  || (_isLocal ? "qwen2.5:7b" : "google/gemini-2.5-flash-preview:free");
+export const LLM_API_KEY = _llmKey || _orKey || (_isLocal ? "ollama" : "");
+export const LLM_BASE_URL = _llmBase || _ollamaBase || (_isLocal ? "http://localhost:11434/v1" : "https://openrouter.ai/api/v1");
+export const DEFAULT_MODEL = env("LLM_MODEL") || env("OLLAMA_MODEL") || (_isLocal ? "qwen2.5:7b" : "google/gemini-2.5-flash-preview:free");
 
 export const VISION_MODEL = process.env.VISION_MODEL || DEFAULT_MODEL;
 
@@ -33,7 +40,10 @@ export const WHISPER_MODEL = process.env.WHISPER_MODEL || "large-v3";
 export const WHISPER_LANG = process.env.WHISPER_LANG || "de";
 
 // ── Agent ────────────────────────────────────────────────────────────────────
-export const MAX_TOOL_ROUNDS = 5;
+// 5 war zu knapp fuer typische Ketten wie navigation → suchen → lesen →
+// bearbeiten → speichern → antworten (das waeren schon 6 Runden).
+// Via Env tunebar falls ein User das Standard-Limit aendern will.
+export const MAX_TOOL_ROUNDS = Number(process.env.MAX_TOOL_ROUNDS ?? 8);
 
 // ── Ged\u00e4chtnis ────────────────────────────────────────────────────────────────
 export const MAX_HISTORY_CHARS = 60_000;
@@ -59,9 +69,21 @@ export const SYSTEM_DATA_PATH = process.env.SYSTEM_DATA_PATH
 export const EXTRACT_MAX_CHARS = 50_000;
 
 // ── Sicherheit ───────────────────────────────────────────────────────────────
-export const ALLOWED_CHAT_ID = process.env.ALLOWED_CHAT_ID
-  ? parseInt(process.env.ALLOWED_CHAT_ID, 10)
-  : null;
+// Frueher: `ALLOWED_CHAT_ID ? parseInt(...) : null` — wenn .env "ALLOWED_CHAT_ID=abc"
+// oder "ALLOWED_CHAT_ID= " enthielt, ergab parseInt NaN, und der isAllowed-Check
+// verglich ctx.chat.id === NaN (immer false) → kompletter Bot-Lockout, ohne
+// Hinweis in den Logs. Jetzt: Nur numerische Werte werden akzeptiert.
+const _chatIdRaw = env("ALLOWED_CHAT_ID");
+const _chatIdNum = _chatIdRaw ? Number(_chatIdRaw) : NaN;
+export const ALLOWED_CHAT_ID: number | null =
+  Number.isFinite(_chatIdNum) && Number.isInteger(_chatIdNum) ? _chatIdNum : null;
+if (_chatIdRaw && ALLOWED_CHAT_ID === null) {
+  // Sofort bei Boot loggen — sonst laeuft Bot mit offener Whitelist unbemerkt.
+  // (Dynamischer Import vermeidet Circular-Dep zwischen config und logger.)
+  import("./logger.js").then(({ logWarn }) =>
+    logWarn(`ALLOWED_CHAT_ID="${_chatIdRaw}" ist keine gueltige Zahl — ignoriert, Whitelist offen!`),
+  ).catch(() => { /* ignore */ });
+}
 
 // ── System ───────────────────────────────────────────────────────────────────
 export const TIMEZONE = "Europe/Vienna";

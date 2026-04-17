@@ -8,6 +8,7 @@ import {
   exportHandlers,
 } from "./handlers/index.js";
 import type { ToolHandler } from "./handlers/index.js";
+import { logError } from "../logger.js";
 
 export {
   getReplyFn,
@@ -32,6 +33,12 @@ export async function executeTool(name: string, args: Record<string, string | nu
     if (handler) return await handler(args);
     return `Unbekanntes Tool: ${name}`;
   } catch (err) {
-    return `Fehler bei ${name}: ${err}`;
+    // Frueher: nur Stringification an den Agent zurueck — kein Stack im Log,
+    // Fehler unsichtbar fuer den Operator. Jetzt: strukturiert loggen +
+    // knappere Message an den Agent (damit das Tool-Result nicht mit
+    // Stack-Trace volllaeuft).
+    logError(`tool:${name}`, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    return `Fehler bei ${name}: ${msg}`;
   }
 }

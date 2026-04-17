@@ -64,13 +64,35 @@ export function atomicWriteSync(filepath: string, data: string): void {
   }
 }
 
-/** Sicherer Pfad innerhalb des Vaults — blockiert Traversal und Symlinks */
+/** Sicherer Pfad innerhalb des Vaults — blockiert Traversal und Symlinks.
+ *
+ * Bugfix: frueher nutzte der Check `resolved.startsWith(workspacePath)`, was
+ * `/vault-backup/secret` akzeptiert haette (kein Trailing-Separator). Jetzt:
+ * Boundary via path.sep, und realpath-Check gegen Symlinks auf ALLEN Segmenten.
+ */
 export function safePath(relativePath: string): string | null {
+  if (typeof relativePath !== "string") return null;
+
+  // Absolute Pfade aus Tool-Args sind nie erlaubt (auch `C:\…` auf Windows)
+  if (path.isAbsolute(relativePath)) return null;
+
   const resolved = path.resolve(workspacePath, relativePath);
-  if (!resolved.startsWith(workspacePath)) return null;
+  const wsWithSep = workspacePath.endsWith(path.sep) ? workspacePath : workspacePath + path.sep;
+
+  // `resolved === workspacePath` ist OK (Vault-Root selbst);
+  // sonst muss resolved unter workspacePath + separator liegen.
+  if (resolved !== workspacePath && !resolved.startsWith(wsWithSep)) return null;
+
   try {
-    if (fs.existsSync(resolved) && fs.lstatSync(resolved).isSymbolicLink()) return null;
-  } catch { /* nicht existent = OK */ }
+    if (fs.existsSync(resolved)) {
+      // realpath loest ALLE Symlinks auf (auch in Zwischen-Segmenten).
+      // Wenn realpath ausserhalb des Vaults zeigt → Block.
+      const real = fs.realpathSync(resolved);
+      const realWs = fs.realpathSync(workspacePath);
+      const realWsSep = realWs.endsWith(path.sep) ? realWs : realWs + path.sep;
+      if (real !== realWs && !real.startsWith(realWsSep)) return null;
+    }
+  } catch { /* nicht existent = OK fuer Write-Targets */ }
   return resolved;
 }
 
@@ -100,10 +122,19 @@ export function walkMarkdownFiles(
 }
 
 export function resolveNotePath(nameOrPath: string): string | null {
+  if (typeof nameOrPath !== "string" || !nameOrPath.trim()) return null;
+
   const withExt = nameOrPath.endsWith(".md") ? nameOrPath : nameOrPath + ".md";
 
-  const directPath = path.join(workspacePath, withExt);
-  if (fs.existsSync(directPath)) return directPath;
+  // Direkter Pfad: MUSS durch safePath, sonst erlaubt `path.join` Traversal
+  // wie `../../../etc/passwd.md`. safePath blockt das.
+  const direct = safePath(withExt);
+  if (direct && fs.existsSync(direct)) return direct;
+
+  // Fuzzy-Suche per Dateiname: rekursiv im Vault nach passendem basename.
+  // Ignoriert Pfad-Teile des Inputs (nur der letzte Segmenteintrag zaehlt),
+  // damit Eingaben wie `Meeting` oder `Daily/Meeting` zum selben File resolven.
+  const wantedName = path.basename(withExt).toLowerCase();
 
   function searchDir(dir: string): string | null {
     if (!fs.existsSync(dir)) return null;
@@ -116,11 +147,10 @@ export function resolveNotePath(nameOrPath: string): string | null {
       if (entry.isDirectory()) {
         const found = searchDir(full);
         if (found) return found;
-      } else if (
-        entry.name === withExt ||
-        entry.name.toLowerCase() === withExt.toLowerCase()
-      ) {
-        return full;
+      } else if (entry.name.toLowerCase() === wantedName) {
+        // Gefundener Pfad nochmal durch safePath (Symlink-Schutz)
+        const rel = path.relative(workspacePath, full);
+        return safePath(rel);
       }
     }
     return null;

@@ -3,7 +3,7 @@ import { saveNote, isMainWorkspaceConfigured } from "./workspace/index.js";
 import { processMessage } from "./llm/runtime.js";
 import { processSetup, isSetupActive, activateSetup } from "./llm/setup.js";
 import { withCallContext } from "./llm/context.js";
-import { logError } from "./logger.js";
+import { logError, logWarn } from "./logger.js";
 import { enqueue } from "./queue.js";
 import { fmt, stripMarkdown } from "./format.js";
 import { TYPING_INTERVAL_MS, ALLOWED_CHAT_ID } from "./config.js";
@@ -42,9 +42,20 @@ function isAllowed(ctx: Context): boolean {
 export function createBot(token: string): Bot {
   const bot = new Bot(token);
 
-  // Security middleware
+  // Security middleware — frueher wurden abgelehnte Nachrichten KOMPLETT
+  // stillschweigend verworfen. Das fuehrte dazu dass User mit falscher
+  // ALLOWED_CHAT_ID minutenlang rateten warum der Bot nichts tut. Jetzt:
+  // einmal pro Chat-ID warnen, damit Misconfig in den Logs sichtbar wird.
+  const loggedDeniedIds = new Set<number>();
   bot.use(async (ctx, next) => {
-    if (!isAllowed(ctx)) return;
+    if (!isAllowed(ctx)) {
+      const cid = ctx.chat?.id;
+      if (cid !== undefined && !loggedDeniedIds.has(cid)) {
+        loggedDeniedIds.add(cid);
+        logWarn(`Zugriff verweigert fuer chat_id=${cid} (ALLOWED_CHAT_ID=${ALLOWED_CHAT_ID}). Falls das dein Chat ist: ALLOWED_CHAT_ID in .env korrigieren.`);
+      }
+      return;
+    }
     await next();
   });
 

@@ -24,14 +24,32 @@ fail() { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 step() { echo -e "\n${BOLD}${CYAN}  ── $1${NC}\n"; }
 
 # Helper: .env Wert lesen/setzen
-env_get() { grep -E "^$1=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true; }
+# CR-Strip ist essentiell: wenn .env mit CRLF (Windows-Editor) vorliegt,
+# liefert `cut -d= -f2-` einen String mit trailing \r. Der bricht dann
+# curl-URLs, Vergleiche wie `[ "$X" = "ollama" ]` und env-Propagation.
+env_get() { grep -E "^$1=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | sed 's/^"//;s/"$//' || true; }
+
+# .env einmal normalisieren: CRLF -> LF (idempotent)
+env_normalize() {
+  [ -f "$INSTALL_DIR/.env" ] || return 0
+  # Nur ausfuehren wenn CR tatsaechlich vorhanden (spart IO)
+  if grep -q $'\r' "$INSTALL_DIR/.env" 2>/dev/null; then
+    sed -i 's/\r$//' "$INSTALL_DIR/.env"
+  fi
+}
+
 # env_set nutzt kein sed (bricht bei langen Werten mit /, &, etc.) sondern
 # atomic file rewrite: alte Zeile raus, neue Zeile anhaengen.
+# grep -F (fixed-string) statt -E: Key-Namen haben keine Regex-Bedeutung,
+# aber Metacharacter im Key-Namen koennten sonst zum Problem werden.
 env_set() {
   local key="$1" val="$2" file="$INSTALL_DIR/.env"
   local tmp="${file}.tmp"
+  env_normalize
   if [ -f "$file" ]; then
-    grep -v "^${key}=" "$file" > "$tmp" || true
+    # awk: nur Zeilen beibehalten wo Field-1 nicht exakt $key ist.
+    # Praeziser als `grep -v "^KEY="` bei Regex-Metacharactern im Key-Namen.
+    awk -v k="$key" 'BEGIN{FS="="} $1!=k {print}' "$file" > "$tmp"
   else
     : > "$tmp"
   fi
@@ -41,8 +59,9 @@ env_set() {
 env_del() {
   local key="$1" file="$INSTALL_DIR/.env"
   [ -f "$file" ] || return 0
+  env_normalize
   local tmp="${file}.tmp"
-  grep -v "^${key}=" "$file" > "$tmp" || true
+  awk -v k="$key" 'BEGIN{FS="="} $1!=k {print}' "$file" > "$tmp" 2>/dev/null || true
   mv "$tmp" "$file"
 }
 
@@ -97,6 +116,9 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
   cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
 fi
 
+# Defensiv: CRLF raus falls Repo mit autocrlf oder via Windows-Editor editiert wurde
+env_normalize
+
 env_set "WORKSPACE_PATH" "/vault"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -104,14 +126,41 @@ env_set "WORKSPACE_PATH" "/vault"
 # ═══════════════════════════════════════════════════════════════════════════════
 step "3/6  Telegram Bot"
 
+# Bot-Token validieren ohne ihn in die curl-URL zu setzen.
+# URL-Token ist in `ps auxf` sichtbar und kann in Proxy-Logs landen.
+# Stattdessen: Token in Tempfile schreiben, via URL lesen.
+# (Telegram Bot-API akzeptiert Token nur in der URL — aber wir koennen
+#  den Prozess-Args verstecken, indem wir die URL aus einer Datei lesen
+#  lassen via curl --url-query ist nicht passend; stattdessen curl `-K` config.)
+validate_telegram_token() {
+  local token="$1"
+  local cfg
+  cfg=$(mktemp)
+  printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$token" > "$cfg"
+  local http_code
+  http_code=$(curl -sS -K "$cfg" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+  rm -f "$cfg"
+  [ "$http_code" = "200" ]
+}
+
+get_bot_name() {
+  local token="$1"
+  local cfg
+  cfg=$(mktemp)
+  printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$token" > "$cfg"
+  local name
+  name=$(curl -sS -K "$cfg" 2>/dev/null | grep -oP '"first_name"\s*:\s*"\K[^"]+')
+  rm -f "$cfg"
+  echo "$name"
+}
+
 CURRENT_TOKEN="$(env_get BOT_TOKEN)"
 if [ -n "$CURRENT_TOKEN" ]; then
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.telegram.org/bot${CURRENT_TOKEN}/getMe")
-  if [ "$HTTP_CODE" = "200" ]; then
-    BOT_NAME=$(curl -s "https://api.telegram.org/bot${CURRENT_TOKEN}/getMe" | grep -oP '"first_name"\s*:\s*"\K[^"]+')
+  if validate_telegram_token "$CURRENT_TOKEN"; then
+    BOT_NAME=$(get_bot_name "$CURRENT_TOKEN")
     ok "Bot Token gueltig — @${BOT_NAME}"
   else
-    warn "Gespeicherter Token ungueltig"
+    warn "Gespeicherter Token ungueltig (moeglicherweise durch CRLF/Whitespace beschaedigt)"
     CURRENT_TOKEN=""
   fi
 fi
@@ -119,18 +168,19 @@ fi
 if [ -z "$CURRENT_TOKEN" ]; then
   while true; do
     echo -e "  Token von ${CYAN}@BotFather${NC} in Telegram holen."
-    read -rp "  Bot Token: " BOT_TOKEN_INPUT
-    BOT_TOKEN_INPUT=$(echo "$BOT_TOKEN_INPUT" | xargs)
+    # -s: kein Echo (Secret), -r: kein Backslash-Escape
+    read -rsp "  Bot Token (Eingabe wird versteckt): " BOT_TOKEN_INPUT
+    echo  # Newline nach verstecktem Input
+    BOT_TOKEN_INPUT=$(echo "$BOT_TOKEN_INPUT" | tr -d '\r\n' | xargs)
     [ -z "$BOT_TOKEN_INPUT" ] && { warn "Token darf nicht leer sein."; continue; }
 
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://api.telegram.org/bot${BOT_TOKEN_INPUT}/getMe")
-    if [ "$HTTP_CODE" = "200" ]; then
-      BOT_NAME=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN_INPUT}/getMe" | grep -oP '"first_name"\s*:\s*"\K[^"]+')
+    if validate_telegram_token "$BOT_TOKEN_INPUT"; then
+      BOT_NAME=$(get_bot_name "$BOT_TOKEN_INPUT")
       env_set "BOT_TOKEN" "$BOT_TOKEN_INPUT"
       ok "Bot Token gespeichert — @${BOT_NAME}"
       break
     else
-      warn "Token ungueltig (HTTP $HTTP_CODE). Nochmal."
+      warn "Token ungueltig. Nochmal."
     fi
   done
 fi
@@ -174,21 +224,25 @@ while true; do
       CURRENT_OR_KEY="${EXISTING_OR_KEY:-${EXISTING_LLM_KEY:-}}"
       if [ -n "$CURRENT_OR_KEY" ]; then
         ok "API-Key vorhanden (${#CURRENT_OR_KEY} Zeichen)"
-        read -rp "  Neuen Key eingeben? (Enter = behalten): " NEW_KEY
+        read -rsp "  Neuen Key eingeben? (Enter = behalten, versteckt): " NEW_KEY
+        echo
         [ -n "$NEW_KEY" ] && CURRENT_OR_KEY="$NEW_KEY"
       else
         while true; do
-          read -rp "  OpenRouter API-Key (sk-or-v1-...): " CURRENT_OR_KEY
-          CURRENT_OR_KEY=$(echo "$CURRENT_OR_KEY" | xargs)
+          read -rsp "  OpenRouter API-Key (sk-or-v1-..., versteckt): " CURRENT_OR_KEY
+          echo
+          CURRENT_OR_KEY=$(echo "$CURRENT_OR_KEY" | tr -d '\r\n' | xargs)
           [ -n "$CURRENT_OR_KEY" ] && break
           warn "Key darf nicht leer sein."
         done
       fi
       env_set "OPENROUTER_API_KEY" "$CURRENT_OR_KEY"
-      # Ollama-spezifische Keys entfernen (leere Werte wuerden Fallback-Chain stoeren)
+      # Alte Ollama/Custom-Config komplett entfernen — sonst verwirrt die
+      # Fallback-Chain in config.ts + der Entrypoint startet faelschlich Ollama.
       env_del "OLLAMA_BASE_URL"
       env_del "OLLAMA_MODEL"
       env_del "LLM_API_KEY"
+      env_del "LLM_BASE_URL"
       ok "OpenRouter API-Key gespeichert"
 
       echo -e ""
@@ -205,41 +259,45 @@ while true; do
       echo -e "    ${CYAN}8)${NC} Eigene Eingabe"
       echo -e ""
 
-      CURRENT_MODEL="$(env_get LLM_MODEL)"
-      while true; do
+      # Modell-Auswahl + Live-Check: neue Auswahl falls Modell tot.
+      # Outer loop = Retry-Schleife; inner case = Auswahl.
+      MODEL_SELECTED=0
+      while [ "$MODEL_SELECTED" = "0" ]; do
         read -rp "  Auswahl [1-8] (default 1): " MODEL_CHOICE
         MODEL_CHOICE="${MODEL_CHOICE:-1}"
         case "$MODEL_CHOICE" in
-          1) SELECTED_MODEL="google/gemini-2.5-flash-preview:free" ; break ;;
-          2) SELECTED_MODEL="meta-llama/llama-3.3-70b-instruct:free" ; break ;;
-          3) SELECTED_MODEL="mistralai/mistral-small-3.1-24b-instruct:free" ; break ;;
-          4) SELECTED_MODEL="nvidia/nemotron-3-super-120b-a12b:free" ; break ;;
-          5) SELECTED_MODEL="anthropic/claude-sonnet-4" ; break ;;
-          6) SELECTED_MODEL="openai/gpt-4o" ; break ;;
-          7) SELECTED_MODEL="google/gemini-2.5-pro" ; break ;;
+          1) SELECTED_MODEL="google/gemini-2.5-flash-preview:free" ;;
+          2) SELECTED_MODEL="meta-llama/llama-3.3-70b-instruct:free" ;;
+          3) SELECTED_MODEL="mistralai/mistral-small-3.1-24b-instruct:free" ;;
+          4) SELECTED_MODEL="nvidia/nemotron-3-super-120b-a12b:free" ;;
+          5) SELECTED_MODEL="anthropic/claude-sonnet-4" ;;
+          6) SELECTED_MODEL="openai/gpt-4o" ;;
+          7) SELECTED_MODEL="google/gemini-2.5-pro" ;;
           8) read -rp "  Modell-ID (provider/model): " SELECTED_MODEL
-             if [ -n "$SELECTED_MODEL" ]; then break; fi
-             warn "Modell-ID darf nicht leer sein." ;;
-          *) warn "Ungueltig — 1 bis 8 waehlen." ;;
+             [ -z "$SELECTED_MODEL" ] && { warn "Modell-ID darf nicht leer sein."; continue; } ;;
+          *) warn "Ungueltig — 1 bis 8 waehlen."; continue ;;
         esac
-      done
 
-      # Live-Check: hat das Modell ueberhaupt aktive Endpoints auf OpenRouter?
-      # (Deckt ab: Modell wurde entfernt, Free-Tier deaktiviert, Typo.)
-      echo -e "  > Pruefe Modell-Verfuegbarkeit..."
-      MODEL_CHECK=$(curl -s -m 10 "https://openrouter.ai/api/v1/models/${SELECTED_MODEL}/endpoints" 2>/dev/null || echo "")
-      if echo "$MODEL_CHECK" | grep -q '"No endpoints found"\|"error"'; then
-        warn "OpenRouter liefert keine aktiven Endpoints fuer $SELECTED_MODEL"
-        warn "Modell scheint entfernt/deaktiviert. Waehle ein anderes oder pruefe https://openrouter.ai/models"
-        read -rp "  Trotzdem speichern? (y/N): " FORCE_SAVE
-        if [[ ! "$FORCE_SAVE" =~ ^[yY]$ ]]; then
-          continue 2>/dev/null || { warn "Bitte Script neu starten und anderes Modell waehlen."; exit 1; }
+        # Live-Check gegen OpenRouter. Statt lose "error"-Grep:
+        # Positiv-Check auf "endpoints":[...] mit Laenge>0.
+        echo -e "  > Pruefe $SELECTED_MODEL ..."
+        MODEL_CHECK=$(curl -s -m 10 "https://openrouter.ai/api/v1/models/${SELECTED_MODEL}/endpoints" 2>/dev/null || echo "")
+        if [ -z "$MODEL_CHECK" ]; then
+          warn "OpenRouter-Check nicht moeglich (Netzwerk?) — ueberspringe Validierung"
+          MODEL_SELECTED=1
+        elif echo "$MODEL_CHECK" | grep -q '"No endpoints found"'; then
+          warn "OpenRouter: Modell entfernt oder ohne aktive Endpoints — bitte anderes waehlen."
+          echo -e "  Siehe ${CYAN}https://openrouter.ai/models${NC}"
+          # Schleife laeuft weiter
+        elif echo "$MODEL_CHECK" | grep -q '"endpoints"\s*:\s*\['; then
+          ok "Modell verfuegbar"
+          MODEL_SELECTED=1
+        else
+          # Unerwarteter Response — nicht hart scheitern, aber flaggen
+          warn "Unerwartete OpenRouter-Antwort — nutze Modell trotzdem"
+          MODEL_SELECTED=1
         fi
-      elif [ -z "$MODEL_CHECK" ]; then
-        warn "OpenRouter-Check nicht moeglich (Netzwerk?) — ueberspringe Validierung"
-      else
-        ok "Modell verfuegbar"
-      fi
+      done
 
       env_set "LLM_MODEL" "$SELECTED_MODEL"
       ok "Modell: $SELECTED_MODEL"
@@ -264,11 +322,15 @@ while true; do
       # ── Anderer Provider ──
       echo -e ""
       read -rp "  API Base-URL (z.B. https://api.openai.com/v1): " CUSTOM_URL
-      read -rp "  API-Key: " CUSTOM_KEY
+      read -rsp "  API-Key (versteckt): " CUSTOM_KEY
+      echo
       read -rp "  Modell (z.B. gpt-4o): " CUSTOM_MODEL
+      CUSTOM_KEY=$(echo "$CUSTOM_KEY" | tr -d '\r\n' | xargs)
       env_set "LLM_BASE_URL" "$CUSTOM_URL"
       env_set "LLM_API_KEY" "$CUSTOM_KEY"
       env_set "LLM_MODEL" "${CUSTOM_MODEL:-gpt-4o}"
+      env_del "OPENROUTER_API_KEY"
+      env_del "OLLAMA_BASE_URL"
       ok "Provider: $CUSTOM_URL — Modell: ${CUSTOM_MODEL:-gpt-4o}"
       LLM_PROVIDER="remote"
       break
