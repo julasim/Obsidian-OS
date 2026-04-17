@@ -23,6 +23,28 @@ warn() { echo -e "  ${YELLOW}!${NC} $1"; }
 fail() { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 step() { echo -e "\n${BOLD}${CYAN}  ── $1${NC}\n"; }
 
+# Helper: Lange Zeile (z.B. OneDrive-Token mit 4000+ Zeichen) lesen.
+# Linux canonical-mode TTY puffert Zeilen bei 4095 Zeichen und kappt alles
+# danach. Das ist genau die Falle, die OneDrive-Token zerstoert.
+# Loesung: stty -icanon (line-discipline aus) → Bytes fliessen direkt, kein
+# Line-Buffer-Limit. Nach dem Read wird der Terminal-Zustand restored.
+read_long_line() {
+  local saved=""
+  if [ -t 0 ]; then
+    saved=$(stty -g 2>/dev/null || true)
+    # -icanon: kein Line-Buffering (kein 4095-Limit)
+    # min 1 time 0: read kehrt zurueck sobald >=1 Byte da ist
+    stty -icanon min 1 time 0 2>/dev/null || true
+  fi
+  local line=""
+  # IFS= und -r: keine Modifikationen, backslash wird nicht escaped
+  IFS= read -r line || true
+  if [ -n "$saved" ]; then
+    stty "$saved" 2>/dev/null || true
+  fi
+  printf '%s' "$line"
+}
+
 # Helper: .env Wert lesen/setzen
 # CR-Strip ist essentiell: wenn .env mit CRLF (Windows-Editor) vorliegt,
 # liefert `cut -d= -f2-` einen String mit trailing \r. Der bricht dann
@@ -356,35 +378,43 @@ else
   echo -e "     ${CYAN}rclone authorize \"onedrive\"${NC}  (rclone muss am PC installiert sein)"
   echo -e "     Im Browser anmelden — rclone zeigt einen JSON-Block ${CYAN}{...}${NC}"
   echo -e ""
-  echo -e "  ${BOLD}2. Token bereitstellen${NC} — ${YELLOW}DRINGEND Datei-Methode nutzen${NC}:"
-  echo -e "     Direkt-Paste ins Terminal schneidet bei ${RED}4095 Zeichen${NC} ab"
-  echo -e "     (Linux canonical mode Limit) — OneDrive-Tokens sind oft laenger."
+  echo -e "  ${BOLD}2. Token einfuegen${NC} (JSON-Block mit Anfuehrungszeichen/Klammern):"
+  echo -e "     Rechtsklick paste im Terminal, dann ${CYAN}Enter${NC}."
+  echo -e "     Das 4095-Zeichen-Limit wird waehrend der Eingabe automatisch umgangen."
   echo -e ""
-  echo -e "     ${BOLD}Datei-Methode (empfohlen):${NC}"
-  echo -e "       ${CYAN}cat > /tmp/rclone-token.json${NC}"
-  echo -e "       ${CYAN}<JSON hier paste>${NC}"
-  echo -e "       ${CYAN}Ctrl+D${NC}"
-  echo -e "     Dann hier ${CYAN}/tmp/rclone-token.json${NC} als Pfad eingeben."
+  echo -e "     Falls der Paste trotzdem zerhackt aussieht:"
+  echo -e "       Alternative Datei-Methode in anderem Terminal:"
+  echo -e "       ${CYAN}cat > /tmp/rclone-token.json${NC} + paste + ${CYAN}Ctrl+D${NC}"
+  echo -e "       Dann hier eingeben: ${CYAN}file:/tmp/rclone-token.json${NC}"
   echo -e ""
   echo -e "     (Leer lassen = OneDrive jetzt skippen, spaeter via nano nachtragen)"
   echo -e ""
 
   RCLONE_TOKEN_VALUE=""
-  read -rp "  Pfad zu Token-Datei (leer = skippen): " TOK_FILE
-  if [ -n "$TOK_FILE" ]; then
+  echo -n "  Token: "
+  RAW_INPUT="$(read_long_line)"
+
+  if [ -z "$RAW_INPUT" ]; then
+    RCLONE_TOKEN_VALUE=""
+  elif [[ "$RAW_INPUT" == file:* ]]; then
+    # Datei-Modus: "file:/pfad/token.json"
+    TOK_FILE="${RAW_INPUT#file:}"
     if [ -f "$TOK_FILE" ]; then
-      # Whitespace + Newlines raus (robuster JSON)
       RCLONE_TOKEN_VALUE="$(tr -d '\r\n' < "$TOK_FILE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     else
       warn "Datei nicht gefunden: $TOK_FILE"
     fi
+  else
+    # Direkter Paste — whitespace raus (read_long_line entfernt bereits
+    # CR/LF am Ende; hier zur Sicherheit zusaetzlich trim)
+    RCLONE_TOKEN_VALUE="$(printf '%s' "$RAW_INPUT" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
   fi
 
-  # Minimum: echte OneDrive-Tokens sind meist >2500 Zeichen.
-  # Exakt 4095 ist verdaechtig (Terminal-Limit) — ablehnen.
+  # Exakt 4095 = altes Terminal-Limit. Mit stty-Trick sollte das nicht
+  # mehr passieren, aber wenn doch (z.B. SSH-Client-Buffering), ablehnen.
   if [ -n "$RCLONE_TOKEN_VALUE" ] && [ "${#RCLONE_TOKEN_VALUE}" = "4095" ]; then
-    warn "Token ist EXAKT 4095 Zeichen — das ist das Linux-Terminal-Limit."
-    warn "Vermutlich wurde er beim Paste abgeschnitten. Bitte via Datei (Datei-Methode oben) neu einlesen."
+    warn "Token ist EXAKT 4095 Zeichen — verdaechtig (alter Terminal-Limit)."
+    warn "Bitte ueber Datei-Methode erneut eingeben: ${CYAN}file:/tmp/rclone-token.json${NC}"
     RCLONE_TOKEN_VALUE=""
   fi
 
