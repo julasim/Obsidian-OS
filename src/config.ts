@@ -24,7 +24,7 @@ const _isLocal =
 
 export const LLM_API_KEY = _llmKey || _orKey || (_isLocal ? "ollama" : "");
 export const LLM_BASE_URL = _llmBase || _ollamaBase || (_isLocal ? "http://localhost:11434/v1" : "https://openrouter.ai/api/v1");
-export const DEFAULT_MODEL = env("LLM_MODEL") || env("OLLAMA_MODEL") || (_isLocal ? "qwen2.5:7b" : "google/gemini-2.5-flash-preview:free");
+export const DEFAULT_MODEL = env("LLM_MODEL") || env("OLLAMA_MODEL") || (_isLocal ? "qwen2.5:7b" : "openrouter/elephant-alpha");
 
 export const VISION_MODEL = process.env.VISION_MODEL || DEFAULT_MODEL;
 

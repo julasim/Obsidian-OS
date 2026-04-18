@@ -321,6 +321,13 @@ for m in data:
         ok "${#FREE_MODELS[@]} Tool-faehige :free-Modelle gefunden"
       fi
 
+      # Stealth-Modelle: anonymer OpenRouter-Access zu Frontier-Modellen.
+      # Preis 0/0, deutlich stabiler als die :free-Tiers, starkes Tool-Calling.
+      # Namen/Verfuegbarkeit aendern sich zyklisch — Live-Check unten faengt das ab.
+      STEALTH_MODELS=(
+        "openrouter/elephant-alpha"
+      )
+
       # Paid-Modelle sind stabiler und bekannt — handkuratiert reicht
       PAID_MODELS=(
         "anthropic/claude-sonnet-4"
@@ -329,14 +336,21 @@ for m in data:
       )
 
       echo -e ""
-      echo -e "  ${BOLD}Kostenlos (live von OpenRouter):${NC}"
+      echo -e "  ${BOLD}${GREEN}Stealth (gratis, Preview-Access zu Frontier-Modellen — empfohlen):${NC}"
+      for i in "${!STEALTH_MODELS[@]}"; do
+        printf "    ${CYAN}%2d)${NC} %s\n" "$((i + 1))" "${STEALTH_MODELS[$i]}"
+      done
+      STEALTH_COUNT=${#STEALTH_MODELS[@]}
+      FREE_START=$((STEALTH_COUNT + 1))
+      echo -e ""
+      echo -e "  ${BOLD}Kostenlos (live von OpenRouter — Qualitaet variiert):${NC}"
       for i in "${!FREE_MODELS[@]}"; do
-        printf "    ${CYAN}%2d)${NC} %s\n" "$((i + 1))" "${FREE_MODELS[$i]}"
+        printf "    ${CYAN}%2d)${NC} %s\n" "$((FREE_START + i))" "${FREE_MODELS[$i]}"
       done
       FREE_COUNT=${#FREE_MODELS[@]}
-      PAID_START=$((FREE_COUNT + 1))
+      PAID_START=$((FREE_START + FREE_COUNT))
       echo -e ""
-      echo -e "  ${BOLD}Kostenpflichtig (Credits noetig — stabiler, besseres Tool-Calling):${NC}"
+      echo -e "  ${BOLD}Kostenpflichtig (Credits noetig — maximal stabil):${NC}"
       for i in "${!PAID_MODELS[@]}"; do
         printf "    ${CYAN}%2d)${NC} %s\n" "$((PAID_START + i))" "${PAID_MODELS[$i]}"
       done
@@ -348,15 +362,17 @@ for m in data:
       # Modell-Auswahl + Live-Check (Endpoints existieren + Modell-ID valide)
       MODEL_SELECTED=0
       while [ "$MODEL_SELECTED" = "0" ]; do
-        read -rp "  Auswahl [1-${MAX_CHOICE}] (default 1): " MODEL_CHOICE
+        read -rp "  Auswahl [1-${MAX_CHOICE}] (default 1 = Stealth): " MODEL_CHOICE
         MODEL_CHOICE="${MODEL_CHOICE:-1}"
 
         if ! [[ "$MODEL_CHOICE" =~ ^[0-9]+$ ]]; then
           warn "Bitte eine Zahl eingeben."; continue
         fi
 
-        if [ "$MODEL_CHOICE" -ge 1 ] && [ "$MODEL_CHOICE" -le "$FREE_COUNT" ]; then
-          SELECTED_MODEL="${FREE_MODELS[$((MODEL_CHOICE - 1))]}"
+        if [ "$MODEL_CHOICE" -ge 1 ] && [ "$MODEL_CHOICE" -le "$STEALTH_COUNT" ]; then
+          SELECTED_MODEL="${STEALTH_MODELS[$((MODEL_CHOICE - 1))]}"
+        elif [ "$MODEL_CHOICE" -ge "$FREE_START" ] && [ "$MODEL_CHOICE" -lt "$PAID_START" ]; then
+          SELECTED_MODEL="${FREE_MODELS[$((MODEL_CHOICE - FREE_START))]}"
         elif [ "$MODEL_CHOICE" -ge "$PAID_START" ] && [ "$MODEL_CHOICE" -lt "$CUSTOM_IDX" ]; then
           SELECTED_MODEL="${PAID_MODELS[$((MODEL_CHOICE - PAID_START))]}"
         elif [ "$MODEL_CHOICE" = "$CUSTOM_IDX" ]; then
