@@ -1,5 +1,5 @@
 import { chatComplete } from "./client.js";
-import type { ToolSchema, ChatMessage } from "./types.js";
+import type { ChatMessage, ChatTool } from "./client.js";
 import { DEFAULT_MODEL } from "../config.js";
 import { finalizeMainWorkspace } from "../workspace/index.js";
 
@@ -13,7 +13,7 @@ export function deactivateSetup(): void { _active = false; }
 
 // ---- Setup Tool ----
 
-const SETUP_TOOL: ToolSchema = {
+const SETUP_TOOL: ChatTool = {
   type: "function",
   function: {
     name: "setup_abschliessen",
@@ -59,11 +59,16 @@ export async function processSetup(userMessage: string): Promise<string> {
     tool_choice: "auto",
   });
 
-  const reply = response.choices[0].message;
+  const reply = response.choices[0]?.message;
+  if (!reply) return "Fehler: leere Antwort vom LLM.";
+
   _messages.push(reply as ChatMessage);
 
   if (reply.tool_calls?.length) {
-    const call = reply.tool_calls[0] as { id: string; function: { name: string; arguments: string } };
+    const call = reply.tool_calls[0];
+    if (call.type !== "function") {
+      return "Fehler: unerwarteter Tool-Call-Typ im Setup.";
+    }
     let args: { name: string; emoji: string; vibe: string; userName: string };
     try {
       args = JSON.parse(call.function.arguments);

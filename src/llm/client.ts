@@ -1,22 +1,23 @@
-import { OpenRouter } from "@openrouter/sdk";
-import { LLM_BASE_URL, LLM_API_KEY, LLM_APP_NAME, LLM_APP_URL, LLM_IS_LOCAL, LOCALE, TIMEZONE } from "../config.js";
-import type { ToolSchema, ChatMessage, ChatResponse } from "./types.js";
+import OpenAI from "openai";
+import { LLM_BASE_URL, LLM_API_KEY, LLM_APP_NAME, LLM_APP_URL, LOCALE, TIMEZONE } from "../config.js";
 import { logError, logWarn } from "../logger.js";
 
-// HTTP-Timeout fuer LLM-Calls. Free-Tier-Provider auf OpenRouter koennen
-// minutenlang haengen bevor sie fehlschlagen; ohne Timeout sitzt der User
-// bei jeder Nachricht 2+ Min im Typing-Indicator.
+// ── OpenAI-kompatibler Client ────────────────────────────────────────────────
+// Funktioniert mit OpenRouter, OpenAI direkt, Ollama (OpenAI-kompatibler Endpoint),
+// Together, Groq. Provider-Wechsel rein ueber ENV (LLM_BASE_URL, LLM_API_KEY).
+const defaultHeaders: Record<string, string> = {};
+if (LLM_APP_NAME) defaultHeaders["X-Title"] = LLM_APP_NAME;
+if (LLM_APP_URL) defaultHeaders["HTTP-Referer"] = LLM_APP_URL;
+
+export const client = new OpenAI({
+  apiKey: LLM_API_KEY,
+  baseURL: LLM_BASE_URL,
+  defaultHeaders,
+});
+
+// HTTP-Timeout + Retry fuer flakige Free-Tier-Provider.
 const LLM_HTTP_TIMEOUT_MS = Number(process.env.LLM_HTTP_TIMEOUT_MS ?? 60_000);
 const LLM_MAX_RETRIES = Number(process.env.LLM_MAX_RETRIES ?? 2);
-
-// ── OpenRouter Client ──────────────────────────────────────────────────────────
-export const client = new OpenRouter({
-  apiKey: LLM_API_KEY,
-  // serverURL erlaubt auch Ollama/Custom-Provider (backward-compat)
-  ...(LLM_IS_LOCAL ? { serverURL: LLM_BASE_URL } : {}),
-  appTitle: LLM_APP_NAME || undefined,
-  httpReferer: LLM_APP_URL || undefined,
-});
 
 // ── Date-Line Helper ───────────────────────────────────────────────────────────
 export function buildDateLine(): string {
@@ -26,61 +27,32 @@ export function buildDateLine(): string {
   })}`;
 }
 
-// ── Chat-Completion Wrapper ────────────────────────────────────────────────────
-// Konvertiert zwischen snake_case (unser Code) und camelCase (SDK).
+// ── Chat-Completion Wrapper mit Retry + Timeout ──────────────────────────────
+
+export type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam;
+export type ChatResponseMessage = OpenAI.Chat.ChatCompletionMessage;
+export type ChatTool = OpenAI.Chat.ChatCompletionTool;
+export type ChatResponse = OpenAI.Chat.ChatCompletion;
 
 interface ChatCompleteParams {
   model: string;
   messages: ChatMessage[];
-  tools?: ToolSchema[];
-  tool_choice?: "required" | "auto" | "none";
+  tools?: ChatTool[];
+  tool_choice?: OpenAI.Chat.ChatCompletionToolChoiceOption;
   max_tokens?: number;
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-function toSdkMessages(msgs: ChatMessage[]): any[] {
-  return msgs.map((msg) => {
-    if (msg.role === "tool") {
-      return { role: "tool", toolCallId: msg.tool_call_id, content: msg.content };
-    }
-    if (msg.role === "assistant" && msg.tool_calls) {
-      return { role: "assistant", content: msg.content, toolCalls: msg.tool_calls };
-    }
-    return msg;
-  });
-}
-
-function fromSdkChoice(choice: any): ChatResponse["choices"][0] {
-  const msg = choice.message;
-  return {
-    message: {
-      role: "assistant",
-      content: msg.content ?? null,
-      tool_calls: msg.toolCalls?.map((tc: any) => ({
-        id: tc.id,
-        type: tc.type ?? "function",
-        function: tc.function,
-      })),
-    },
-    finish_reason: choice.finishReason ?? null,
-  };
-}
-/* eslint-enable @typescript-eslint/no-explicit-any */
-
-/** Retry-faehige Fehler: Netzwerk, Timeout, 5xx, 429, Validation (transient).
- *  Nicht retryen: 400/401/403/404 (Modell/Key-Probleme — Retry macht's nicht besser). */
+/** Retry-faehige Fehler: Netzwerk, Timeout, 5xx, 429. */
 function isRetryable(err: unknown): boolean {
-  const e = err as { status?: number; statusCode?: number; name?: string; code?: string; constructor?: { name?: string } };
+  const e = err as { status?: number; statusCode?: number; name?: string; code?: string };
   const status = e?.status ?? e?.statusCode;
   if (status !== undefined) {
     if (status === 408 || status === 429) return true;
     if (status >= 500 && status < 600) return true;
     return false;
   }
-  // AbortError (Timeout) oder Netzwerk-Code
-  if (e?.name === "AbortError" || e?.code === "ECONNRESET" || e?.code === "ETIMEDOUT" || e?.code === "EAI_AGAIN") return true;
-  // Validation: retryen hilft bei kurzen Provider-Hiccups, aber nur einmal (wird durch maxRetries ohnehin begrenzt)
-  if (e?.name === "ResponseValidationError" || e?.constructor?.name === "ResponseValidationError") return true;
+  if (e?.name === "AbortError") return true;
+  if (e?.code === "ECONNRESET" || e?.code === "ETIMEDOUT" || e?.code === "EAI_AGAIN") return true;
   return false;
 }
 
@@ -97,44 +69,32 @@ export async function chatComplete(params: ChatCompleteParams): Promise<ChatResp
     const timeoutHandle = setTimeout(() => ac.abort(), LLM_HTTP_TIMEOUT_MS);
 
     try {
-      // SDK akzeptiert options als zweites Argument mit fetchOptions.signal
-      const result = await client.chat.send(
+      const result = await client.chat.completions.create(
         {
-          chatRequest: {
-            model: params.model,
-            messages: toSdkMessages(params.messages) as any,
-            tools: params.tools as any,
-            toolChoice: params.tool_choice as any,
-            maxTokens: params.max_tokens ?? undefined,
-            stream: false,
-          },
+          model: params.model,
+          messages: params.messages,
+          tools: params.tools,
+          tool_choice: params.tool_choice,
+          max_tokens: params.max_tokens,
         },
-        { fetchOptions: { signal: ac.signal } } as any,
+        { signal: ac.signal },
       );
       clearTimeout(timeoutHandle);
-      return { choices: result.choices.map(fromSdkChoice) };
+      return result;
     } catch (err: unknown) {
       clearTimeout(timeoutHandle);
       lastErr = err;
 
-      // ResponseValidationError: Raw-Body einmal loggen (unabhaengig von Retry)
-      const e = err as { name?: string; rawValue?: unknown; cause?: unknown; constructor?: { name?: string } };
-      const isValidation =
-        e?.name === "ResponseValidationError" ||
-        e?.constructor?.name === "ResponseValidationError" ||
-        e?.rawValue !== undefined;
-      if (isValidation) {
-        try {
-          const raw = JSON.stringify(e.rawValue ?? e.cause, null, 0).slice(0, 4000);
-          logError("LLM-SDK", `ResponseValidationError raw=${raw}`);
-        } catch {
-          logError("LLM-SDK", "ResponseValidationError (raw body not serializable)");
-        }
+      // OpenAI-SDK-Error-Details (status + body) extrahieren wenn vorhanden,
+      // damit wir bei 4xx den konkreten Grund sehen (dead model, bad key, ...)
+      const e = err as { name?: string; status?: number; message?: string; error?: { message?: string } };
+      if (e?.status && e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429) {
+        const detail = e.error?.message ?? e.message ?? "";
+        logError("LLM-SDK", `${e.name ?? "Error"} ${e.status}: ${detail}`);
       }
 
       if (attempt >= LLM_MAX_RETRIES || !isRetryable(err)) break;
 
-      // Exponential backoff mit Jitter: 500ms, 1500ms, ...
       const delay = 500 * Math.pow(3, attempt) + Math.floor(Math.random() * 300);
       logWarn(`LLM-Retry ${attempt + 1}/${LLM_MAX_RETRIES} in ${delay}ms (${e?.name ?? "error"})`);
       await sleep(delay);

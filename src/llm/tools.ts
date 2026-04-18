@@ -1,37 +1,13 @@
-import type { ToolSchema } from "./types.js";
-import {
-  noteSchemas,
-  searchSchemas,
-  taskSchemas,
-  terminSchemas,
-  projektSchemas,
-  obsidianSchemas,
-  exportSchemas,
-} from "./handlers/index.js";
+/**
+ * Tool-Registry — re-export der 6 konsolidierten Tools aus src/tools/.
+ *
+ * Vorher: viele Einzel-Handler (notiz_speichern, vault_suchen, ...).
+ * Jetzt: 6 Dispatcher-Tools mit `modus`-Parameter, aus der KI-Tools-Library.
+ */
+import { TOOL_SCHEMAS, TOOL_HANDLERS } from "../tools/index.js";
+import type { ChatTool } from "./client.js";
 
-const antwortenSchema: ToolSchema = {
-  type: "function",
-  function: {
-    name: "antworten",
-    description:
-      "Sendet eine Antwort an den Benutzer. JEDE Antwort MUSS ueber dieses Tool gesendet werden. Typischer Ablauf: (1) Erkenne was der Input ist (Termin/Aufgabe/Notiz/Frage), (2) Fuehre die passenden Tools aus (speichern, suchen etc.), (3) Bestaetige knapp ueber antworten. Handle AUTONOM — entscheide selbst ueber Titel, Tags, Speicherort. Frage NUR bei echten Mehrdeutigkeiten zurueck. Erfinde NIEMALS Daten.",
-    parameters: {
-      type: "object",
-      properties: {
-        text: { type: "string", description: "Die Antwort an den Benutzer (Markdown erlaubt)" },
-      },
-      required: ["text"],
-    },
-  },
-};
+// TOOL_SCHEMAS aus den Tools hat exakt das OpenAI ChatTool-Format
+export const TOOLS: ChatTool[] = TOOL_SCHEMAS as unknown as ChatTool[];
 
-export const TOOLS: ToolSchema[] = [
-  antwortenSchema,
-  ...noteSchemas,
-  ...searchSchemas,
-  ...taskSchemas,
-  ...terminSchemas,
-  ...projektSchemas,
-  ...obsidianSchemas,
-  ...exportSchemas,
-];
+export { TOOL_HANDLERS };

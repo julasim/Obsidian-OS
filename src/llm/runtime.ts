@@ -1,5 +1,5 @@
 import { chatComplete, buildDateLine } from "./client.js";
-import type { ChatMessage } from "./types.js";
+import type { ChatMessage } from "./client.js";
 import { TOOLS } from "./tools.js";
 import { executeTool } from "./executor.js";
 import { runCompaction } from "./compaction.js";
@@ -15,6 +15,9 @@ import {
 import { logInfo, logError } from "../logger.js";
 
 // ---- Agent Runtime ----
+// Pattern nach KI-Tools/INTEGRATION.md:
+//   tool_choice="auto", Loop bis Modell keinen Tool-Call mehr macht.
+//   Finaler content des Modells ist die Antwort an den User.
 
 export async function processAgent(agentName: string, userMessage: string): Promise<string> {
   const preview =
@@ -38,83 +41,59 @@ export async function processAgent(agentName: string, userMessage: string): Prom
 
   let totalChars = messages.reduce((s, m) => s + JSON.stringify(m).length, 0);
 
-  let enforcementRetries = 0;
-  const MAX_ENFORCEMENT_RETRIES = 2;
-
-  for (let i = 0; i < MAX_TOOL_ROUNDS; i++) {
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const response = await chatComplete({
       model: DEFAULT_MODEL,
       messages,
       tools: TOOLS,
-      tool_choice: "required",
+      tool_choice: "auto",
     });
 
-    const choice = response.choices[0];
+    const choice = response.choices?.[0];
     const reply = choice?.message;
-    const finishReason = choice?.finish_reason;
+    const finishReason = choice?.finish_reason ?? null;
+
     if (!reply) {
-      logError(`[${agentName}]`, "API returned empty choices");
-      break;
+      logError(`[${agentName}]`, `API returned empty choices (finish=${finishReason})`);
+      const fallback = "Ich konnte keine Antwort generieren.";
+      appendAgentConversation(agentName, userMessage, fallback);
+      return fallback;
     }
-    messages.push(reply);
+
+    // Assistant-Message (evtl. mit tool_calls) in History aufnehmen
+    messages.push(reply as ChatMessage);
     totalChars += JSON.stringify(reply).length;
 
-    // Modell hat tool_choice="required" ignoriert → Diagnose + harter Retry
+    // Kein Tool-Call → Modell hat direkt geantwortet → fertig
     if (!reply.tool_calls || reply.tool_calls.length === 0) {
-      const contentPreview = (reply.content ?? "")
-        .slice(0, 200)
-        .replace(/\s+/g, " ")
-        .trim();
-      logInfo(
-        `[${agentName}] Kein Tool (Runde ${i + 1}, finish=${finishReason}, retries=${enforcementRetries}): "${contentPreview}"`,
-      );
-
-      // Retry: Modell explizit zum Tool-Call zwingen
-      if (enforcementRetries < MAX_ENFORCEMENT_RETRIES) {
-        enforcementRetries++;
-        messages.push({
-          role: "user",
-          content:
-            "REGELVERSTOSS: Du hast keinen Tool-Call gemacht. Freier Text ohne Tool ist VERBOTEN. " +
-            "Fuer Chat-Antworten: antworten(text=...). Fuer Aktionen: notiz_speichern / vault_suchen usw. " +
-            "Antworte jetzt NEU und nutze ein Tool. KEIN Fliesstext.",
-        });
-        continue;
-      }
-
-      // Nach zwei fehlgeschlagenen Retries: content als Antwort durchreichen (Notfall-Fallback)
-      const antwort = reply.content ?? "Ich konnte deine Anfrage nicht vollstaendig bearbeiten.";
+      const antwort = (reply.content ?? "").trim() || "Ich konnte keine Antwort generieren.";
       appendAgentConversation(agentName, userMessage, antwort);
-      logInfo(
-        `[${agentName}] Final ohne Tool-Call nach ${enforcementRetries} Retries (${antwort.length} Z)`,
-      );
+      logInfo(`[${agentName}] Antwort (Runde ${round + 1}, ${antwort.length} Z, finish=${finishReason})`);
       if (shouldCompact(agentName)) await runCompaction(agentName);
       return antwort;
     }
 
-    const allCalls = reply.tool_calls.map((tc) => tc as { id: string; function: { name: string; arguments: string } });
-    const toolSummary = allCalls
+    // Tool-Calls verarbeiten. OpenAI SDK v6 hat Union
+    // (function | custom); wir unterstuetzen nur function-Typ.
+    const functionCalls = reply.tool_calls.filter(
+      (tc): tc is typeof tc & { type: "function"; function: { name: string; arguments: string } } =>
+        tc.type === "function",
+    );
+
+    const toolSummary = functionCalls
       .map((tc) => {
         const argsRaw = tc.function.arguments || "";
         const argsShort = argsRaw.length > 120 ? argsRaw.slice(0, 120) + "..." : argsRaw;
         return `${tc.function.name}(${argsShort})`;
       })
       .join(", ");
-    logInfo(`[${agentName}] Tools (Runde ${i + 1}): ${toolSummary}`);
+    logInfo(`[${agentName}] Tools (Runde ${round + 1}): ${toolSummary}`);
 
-    // Pruefen ob "antworten" dabei ist
-    const antwortCall = allCalls.find((tc) => tc.function.name === "antworten");
-    const otherCalls = allCalls.filter((tc) => tc.function.name !== "antworten");
-
-    // Seiteneffekt-Tools (Speichern/Verschieben/Suchen) IMMER zuerst ausfuehren und
-    // vollstaendig abwarten, BEVOR wir die antworten-Bestaetigung an den User schicken.
-    // So sehen wir Fehler und der User bekommt nie eine "✅ Gespeichert"-Antwort, waehrend
-    // der Write noch laeuft.
-    const toolResults = await Promise.all(
-      otherCalls.map(async (tc) => {
-        let args: Record<string, string | number>;
+    const toolResults: ChatMessage[] = await Promise.all(
+      functionCalls.map(async (tc) => {
+        let args: Record<string, unknown> = {};
         try {
-          args = JSON.parse(tc.function.arguments) as Record<string, string | number>;
+          args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
         } catch {
           return {
             role: "tool" as const,
@@ -127,37 +106,21 @@ export async function processAgent(agentName: string, userMessage: string): Prom
       }),
     );
 
-    // Wenn "antworten" aufgerufen wurde → finale Antwort zurueckgeben (nach Seiteneffekten)
-    if (antwortCall) {
-      let antwortText = "Erledigt.";
-      try {
-        const antwortArgs = JSON.parse(antwortCall.function.arguments) as Record<string, string>;
-        antwortText = antwortArgs.text || "Erledigt.";
-      } catch {
-        // Fallback bei fehlerhaften Argumenten
-      }
-      appendAgentConversation(agentName, userMessage, antwortText);
-      logInfo(`[${agentName}] Antwort via antworten-Tool (Runde ${i + 1}, ${antwortText.length} Z)`);
-      if (shouldCompact(agentName)) await runCompaction(agentName);
-      return antwortText;
-    }
-
     messages.push(...toolResults);
     for (const r of toolResults) totalChars += JSON.stringify(r).length;
 
-    // Pruning: keep assistant+tool pairs together (API requirement).
-    // A tool message without its preceding assistant (which holds tool_calls) breaks the API.
+    // History-Pruning: tool+assistant Paare muessen beieinander bleiben,
+    // sonst verletzt der nachfolgende Request das OpenAI-Message-Schema.
     if (totalChars > MAX_HISTORY_CHARS) {
       const systemMsg = messages[0];
       let cutPoint = Math.max(1, messages.length - (KEPT_TOOL_MESSAGES * 3));
 
-      // Walk backward: if cutPoint lands on a tool message, include its parent assistant
+      // Rueckwaerts: wenn cutPoint auf tool-Message landet, eine zurueck
       while (cutPoint > 1 && messages[cutPoint].role === "tool") {
         cutPoint--;
       }
 
       const recentMsgs = messages.slice(cutPoint);
-      // Preserve original user message if it would be pruned
       const firstUserIdx = messages.findIndex((m, idx) => idx > 0 && m.role === "user");
       const firstUser = firstUserIdx > 0 && firstUserIdx < cutPoint ? [messages[firstUserIdx]] : [];
       messages.splice(0, messages.length, systemMsg, ...firstUser, ...recentMsgs);
@@ -165,7 +128,7 @@ export async function processAgent(agentName: string, userMessage: string): Prom
     }
   }
 
-  const fallback = "Ich konnte deine Anfrage nicht vollstaendig bearbeiten.";
+  const fallback = "Ich konnte deine Anfrage nicht vollstaendig bearbeiten (Tool-Runden erschoepft).";
   appendAgentConversation(agentName, userMessage, fallback);
   logInfo(`[${agentName}] Fallback nach ${MAX_TOOL_ROUNDS} Runden`);
   if (shouldCompact(agentName)) await runCompaction(agentName);
