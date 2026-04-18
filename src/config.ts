@@ -40,10 +40,11 @@ export const WHISPER_MODEL = process.env.WHISPER_MODEL || "large-v3";
 export const WHISPER_LANG = process.env.WHISPER_LANG || "de";
 
 // ── Agent ────────────────────────────────────────────────────────────────────
-// 5 war zu knapp fuer typische Ketten wie navigation → suchen → lesen →
-// bearbeiten → speichern → antworten (das waeren schon 6 Runden).
-// Via Env tunebar falls ein User das Standard-Limit aendern will.
-export const MAX_TOOL_ROUNDS = Number(process.env.MAX_TOOL_ROUNDS ?? 8);
+// Mehrstufige Operationen wie "Notiz verschieben + Projekt umbenennen" brauchen
+// schnell 10+ Tool-Rounds (suchen → Zielordner pruefen → lesen → speichern →
+// alten Eintrag loeschen → Projekt umbenennen → verifizieren → antworten).
+// 15 als Default gibt Puffer; via Env tunebar fuer spezielle Faelle.
+export const MAX_TOOL_ROUNDS = Number(process.env.MAX_TOOL_ROUNDS ?? 15);
 
 // ── Ged\u00e4chtnis ────────────────────────────────────────────────────────────────
 export const MAX_HISTORY_CHARS = 60_000;
