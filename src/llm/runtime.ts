@@ -1,5 +1,5 @@
 import { chatComplete, buildDateLine } from "./client.js";
-import type { ChatMessage } from "./client.js";
+import type { ChatMessage, ChatTool } from "./client.js";
 import { TOOLS } from "./tools.js";
 import { executeTool } from "./executor.js";
 import { runCompaction } from "./compaction.js";
@@ -14,10 +14,36 @@ import {
 } from "../config.js";
 import { logInfo, logError } from "../logger.js";
 
+// ---- Antworten-Meta-Tool ----
+// Zwingt das LLM, ueber DIESES Tool zu antworten (statt nur content),
+// sonst haelt es `tool_choice="required"` nicht sauber durch. Verhindert
+// Halluzinationen: bei Datenfragen MUSS das Modell erst ein vault/notiz/...
+// Tool callen, sonst hat es keinen Kontext fuer antworten().
+const ANTWORTEN_TOOL: ChatTool = {
+  type: "function",
+  function: {
+    name: "antworten",
+    description:
+      "Sendet die finale Antwort an den Benutzer. JEDE Nutzer-Antwort MUSS ueber " +
+      "dieses Tool gehen. Fuer Datenfragen ZUERST vault/notiz/aufgaben/... callen, " +
+      "dann mit den echten Daten antworten. NIEMALS Inhalte erfinden — wenn keine " +
+      "Daten vorliegen, das ehrlich sagen.",
+    parameters: {
+      type: "object",
+      properties: {
+        text: {
+          type: "string",
+          description: "Die Antwort an den Benutzer (Markdown erlaubt). Auf Deutsch, praezise.",
+        },
+      },
+      required: ["text"],
+    },
+  },
+};
+
+const ALL_TOOLS: ChatTool[] = [ANTWORTEN_TOOL, ...TOOLS];
+
 // ---- Agent Runtime ----
-// Pattern nach KI-Tools/INTEGRATION.md:
-//   tool_choice="auto", Loop bis Modell keinen Tool-Call mehr macht.
-//   Finaler content des Modells ist die Antwort an den User.
 
 export async function processAgent(agentName: string, userMessage: string): Promise<string> {
   const preview =
@@ -41,12 +67,15 @@ export async function processAgent(agentName: string, userMessage: string): Prom
 
   let totalChars = messages.reduce((s, m) => s + JSON.stringify(m).length, 0);
 
+  let enforcementRetries = 0;
+  const MAX_ENFORCEMENT_RETRIES = 2;
+
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const response = await chatComplete({
       model: DEFAULT_MODEL,
       messages,
-      tools: TOOLS,
-      tool_choice: "auto",
+      tools: ALL_TOOLS,
+      tool_choice: "required",
     });
 
     const choice = response.choices?.[0];
@@ -60,25 +89,45 @@ export async function processAgent(agentName: string, userMessage: string): Prom
       return fallback;
     }
 
-    // Assistant-Message (evtl. mit tool_calls) in History aufnehmen
     messages.push(reply as ChatMessage);
     totalChars += JSON.stringify(reply).length;
 
-    // Kein Tool-Call → Modell hat direkt geantwortet → fertig
+    // Modell ignoriert tool_choice="required" → Diagnose + Enforcement-Retry
     if (!reply.tool_calls || reply.tool_calls.length === 0) {
+      const contentPreview = (reply.content ?? "").slice(0, 200).replace(/\s+/g, " ").trim();
+      logInfo(
+        `[${agentName}] Kein Tool (Runde ${round + 1}, finish=${finishReason}, retries=${enforcementRetries}): "${contentPreview}"`,
+      );
+
+      if (enforcementRetries < MAX_ENFORCEMENT_RETRIES) {
+        enforcementRetries++;
+        messages.push({
+          role: "user",
+          content:
+            "REGELVERSTOSS: Kein Tool-Call gemacht. Antworte NEU und nutze antworten(text=...) " +
+            "ODER ein Daten-Tool (vault/notiz/...). Fliesstext ohne Tool ist verboten.",
+        });
+        continue;
+      }
+
+      // Notfall-Fallback: content direkt durchreichen
       const antwort = (reply.content ?? "").trim() || "Ich konnte keine Antwort generieren.";
       appendAgentConversation(agentName, userMessage, antwort);
-      logInfo(`[${agentName}] Antwort (Runde ${round + 1}, ${antwort.length} Z, finish=${finishReason})`);
+      logInfo(`[${agentName}] Final ohne Tool nach ${enforcementRetries} Retries (${antwort.length} Z)`);
       if (shouldCompact(agentName)) await runCompaction(agentName);
       return antwort;
     }
 
-    // Tool-Calls verarbeiten. OpenAI SDK v6 hat Union
-    // (function | custom); wir unterstuetzen nur function-Typ.
+    // Tool-Calls verarbeiten. OpenAI SDK v6 hat Union (function | custom);
+    // wir unterstuetzen nur function-Typ.
     const functionCalls = reply.tool_calls.filter(
       (tc): tc is typeof tc & { type: "function"; function: { name: string; arguments: string } } =>
         tc.type === "function",
     );
+
+    // antworten-Call raussuchen — der liefert den finalen User-Text
+    const antwortenCall = functionCalls.find((tc) => tc.function.name === "antworten");
+    const sideEffectCalls = functionCalls.filter((tc) => tc.function.name !== "antworten");
 
     const toolSummary = functionCalls
       .map((tc) => {
@@ -89,8 +138,10 @@ export async function processAgent(agentName: string, userMessage: string): Prom
       .join(", ");
     logInfo(`[${agentName}] Tools (Runde ${round + 1}): ${toolSummary}`);
 
+    // Seiten-Effekt-Tools (Schreiben/Suchen/...) IMMER zuerst — damit antworten
+    // nie eine "Erledigt"-Bestaetigung sendet bevor der Write wirklich durch ist.
     const toolResults: ChatMessage[] = await Promise.all(
-      functionCalls.map(async (tc) => {
+      sideEffectCalls.map(async (tc) => {
         let args: Record<string, unknown> = {};
         try {
           args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
@@ -106,16 +157,38 @@ export async function processAgent(agentName: string, userMessage: string): Prom
       }),
     );
 
+    // antworten-Call: finaler User-Text, nach allen Side-Effects
+    if (antwortenCall) {
+      let antwortText = "Erledigt.";
+      try {
+        const parsed = JSON.parse(antwortenCall.function.arguments || "{}") as { text?: string };
+        antwortText = (parsed.text ?? "").trim() || "Erledigt.";
+      } catch {
+        // bei kaputten args: fallback
+      }
+      // tool_call_id des antworten-Calls auch noch als tool-message quittieren,
+      // damit der naechste (ggf.) API-Call die message-Sequenz nicht verletzt.
+      messages.push({
+        role: "tool" as const,
+        tool_call_id: antwortenCall.id,
+        content: "OK",
+      });
+      messages.push(...toolResults);
+
+      appendAgentConversation(agentName, userMessage, antwortText);
+      logInfo(`[${agentName}] Antwort via antworten (Runde ${round + 1}, ${antwortText.length} Z)`);
+      if (shouldCompact(agentName)) await runCompaction(agentName);
+      return antwortText;
+    }
+
     messages.push(...toolResults);
     for (const r of toolResults) totalChars += JSON.stringify(r).length;
 
-    // History-Pruning: tool+assistant Paare muessen beieinander bleiben,
-    // sonst verletzt der nachfolgende Request das OpenAI-Message-Schema.
+    // History-Pruning: tool+assistant Paare zusammen halten.
     if (totalChars > MAX_HISTORY_CHARS) {
       const systemMsg = messages[0];
       let cutPoint = Math.max(1, messages.length - (KEPT_TOOL_MESSAGES * 3));
 
-      // Rueckwaerts: wenn cutPoint auf tool-Message landet, eine zurueck
       while (cutPoint > 1 && messages[cutPoint].role === "tool") {
         cutPoint--;
       }

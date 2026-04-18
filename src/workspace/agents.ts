@@ -85,16 +85,30 @@ function truncateFile(content: string, filename: string): string {
   return content.slice(0, MAX_FILE_CHARS) + `\n\n[... ${filename} gekuerzt – ${removed} Zeichen entfernt]`;
 }
 
+/**
+ * Tageslog fuer den System-Prompt aufbereiten.
+ * Strippt das `**Agent:** ` und `**User:** ` Prefix, damit das LLM nicht
+ * versucht, diesen Chat-Log-Stil in seinen eigenen Antworten zu reproduzieren
+ * (was frueher zu "Main:"-Praefixen in Replies fuehrte).
+ */
+function sanitizeLogForPrompt(raw: string, agentName: string): string {
+  const escapedName = agentName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return raw
+    .replace(new RegExp(`\\*\\*${escapedName}:\\*\\* `, "g"), "Antwort: ")
+    .replace(/\*\*User:\*\* /g, "Frage: ");
+}
+
 export function loadAgentWorkspace(agentName: string): string {
   const agentDir = getAgentPath(agentName);
   let context = "";
   let totalChars = 0;
 
-  function addFile(filepath: string, label: string): void {
+  function addFile(filepath: string, label: string, transform?: (raw: string) => string): void {
     if (!fs.existsSync(filepath)) return;
     const raw = fs.readFileSync(filepath, "utf-8").trim();
     if (!raw) return;
-    const content = truncateFile(raw, label);
+    const processed = transform ? transform(raw) : raw;
+    const content = truncateFile(processed, label);
     const block = `\n\n---\n${content}`;
     if (totalChars + block.length > MAX_TOTAL_CHARS) return;
     context += block;
@@ -104,7 +118,11 @@ export function loadAgentWorkspace(agentName: string): string {
   addFile(path.join(agentDir, "SYSTEM.md"), "SYSTEM.md");
   addFile(path.join(agentDir, "MEMORY.md"), "MEMORY.md");
   const today = new Date().toISOString().slice(0, 10);
-  addFile(path.join(agentDir, WORKSPACE_LOGS_DIR, `${today}.md`), "Tageslog");
+  addFile(
+    path.join(agentDir, WORKSPACE_LOGS_DIR, `${today}.md`),
+    "Tageslog",
+    (raw) => sanitizeLogForPrompt(raw, agentName),
+  );
 
   return context.trim();
 }
