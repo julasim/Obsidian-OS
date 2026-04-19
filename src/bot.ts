@@ -23,14 +23,56 @@ function withTyping(ctx: Context): { stop: () => void } {
   return { stop: () => clearInterval(id) };
 }
 
+// Telegram-Nachrichten-Limit: 4096 Zeichen. HTML-Tags zaehlen mit, deshalb
+// konservativ auf 3800 gecappt — laesst Spielraum fuer <b>...</b> Overhead
+// und Metadaten ("(1/3)"-Prefixes bei Mehrteilern).
+const TG_MAX_CHARS = 3800;
+
+/**
+ * Splitet einen langen Text in Telegram-taugliche Chunks.
+ * Versucht an Absatzgrenzen (\n\n), dann an Zeilenumbruechen, dann an Leerzeichen
+ * zu splitten. Letzter Notfall: harter Cut nach TG_MAX_CHARS.
+ */
+function splitForTelegram(text: string): string[] {
+  if (text.length <= TG_MAX_CHARS) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > TG_MAX_CHARS) {
+    let cut = remaining.lastIndexOf("\n\n", TG_MAX_CHARS);
+    if (cut < TG_MAX_CHARS / 2) cut = remaining.lastIndexOf("\n", TG_MAX_CHARS);
+    if (cut < TG_MAX_CHARS / 2) cut = remaining.lastIndexOf(" ", TG_MAX_CHARS);
+    if (cut < 0) cut = TG_MAX_CHARS;
+
+    chunks.push(remaining.slice(0, cut).trimEnd());
+    remaining = remaining.slice(cut).trimStart();
+  }
+  if (remaining.length > 0) chunks.push(remaining);
+  return chunks;
+}
+
 async function safeReply(
   ctx: { reply: (text: string, opts?: object) => Promise<unknown> },
   text: string,
 ): Promise<void> {
-  try {
-    await ctx.reply(fmt(text), { parse_mode: "HTML" });
-  } catch {
-    await ctx.reply(stripMarkdown(text));
+  const parts = splitForTelegram(text);
+  const total = parts.length;
+  for (let i = 0; i < total; i++) {
+    const prefix = total > 1 ? `(${i + 1}/${total}) ` : "";
+    const chunk = prefix + parts[i];
+    try {
+      await ctx.reply(fmt(chunk), { parse_mode: "HTML" });
+    } catch {
+      try {
+        await ctx.reply(stripMarkdown(chunk));
+      } catch (err) {
+        // Letzter Rettungsanker — wenn auch das scheitert, User wenigstens
+        // informieren dass was nicht stimmt.
+        logError("safeReply", err);
+        await ctx.reply("Fehler beim Senden der Antwort (zu lang oder ungueltige Formatierung).").catch(() => {});
+      }
+    }
   }
 }
 

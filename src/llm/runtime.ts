@@ -28,13 +28,20 @@ const ANTWORTEN_TOOL: ChatTool = {
       "Sendet die finale Antwort an den Benutzer. JEDE Nutzer-Antwort MUSS ueber " +
       "dieses Tool gehen. Fuer Datenfragen ZUERST vault/notiz/aufgaben/... callen, " +
       "dann mit den echten Daten antworten. NIEMALS Inhalte erfinden — wenn keine " +
-      "Daten vorliegen, das ehrlich sagen.",
+      "Daten vorliegen, das ehrlich sagen.\n\n" +
+      "WICHTIG — Laenge: der Text geht an Telegram, maximal 3800 Zeichen sinnvoll " +
+      "(laengere Nachrichten werden automatisch gesplittet). FASSE ZUSAMMEN, kopiere " +
+      "KEINE Rohdaten (ganze Wiki-Artikel, lange Tabellen, komplette Notiz-Inhalte) " +
+      "als Antwort. Bei 'lies mir Notiz X' → 3-5 Satz-Zusammenfassung + Hinweis auf " +
+      "Dateiname, nicht den gesamten Inhalt. Knapp, praezise, auf Deutsch.",
     parameters: {
       type: "object",
       properties: {
         text: {
           type: "string",
-          description: "Die Antwort an den Benutzer (Markdown erlaubt). Auf Deutsch, praezise.",
+          description:
+            "Die Antwort an den Benutzer (Markdown erlaubt). Auf Deutsch, praezise. " +
+            "Richtwert: unter 1000 Zeichen. Nur in absoluten Ausnahmefaellen laenger.",
         },
       },
       required: ["text"],
