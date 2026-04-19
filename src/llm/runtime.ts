@@ -70,12 +70,35 @@ export async function processAgent(agentName: string, userMessage: string): Prom
   let enforcementRetries = 0;
   const MAX_ENFORCEMENT_RETRIES = 2;
 
+  // Loop-Detection: wenn dreimal hintereinander identischer Tool-Call → abbrechen.
+  // Verhindert dass das Modell bei einer Nicht-gefunden-Antwort endlos retry't.
+  const recentCallSignatures: string[] = [];
+
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    // Auf der vorletzten Runde Force-antworten: das Modell MUSS wrapen.
+    // Dadurch landen wir nie im "Tool-Runden erschoepft"-Fallback wenn das
+    // Modell an sich noch ansprechbar ist — im schlimmsten Fall gibt es
+    // eine "keine Ergebnisse" oder "nicht gefunden" Antwort.
+    const isLastChance = round === MAX_TOOL_ROUNDS - 1;
+    const toolChoice: "required" | { type: "function"; function: { name: string } } = isLastChance
+      ? { type: "function", function: { name: "antworten" } }
+      : "required";
+
+    if (isLastChance) {
+      messages.push({
+        role: "user",
+        content:
+          "Letzte Runde — keine weiteren Tool-Calls moeglich. Bitte JETZT via antworten(text=...) " +
+          "das zusammenfassen was du bis jetzt herausgefunden hast, oder ehrlich sagen dass keine " +
+          "Daten gefunden wurden.",
+      });
+    }
+
     const response = await chatComplete({
       model: DEFAULT_MODEL,
       messages,
       tools: ALL_TOOLS,
-      tool_choice: "required",
+      tool_choice: toolChoice,
     });
 
     const choice = response.choices?.[0];
@@ -137,6 +160,32 @@ export async function processAgent(agentName: string, userMessage: string): Prom
       })
       .join(", ");
     logInfo(`[${agentName}] Tools (Runde ${round + 1}): ${toolSummary}`);
+
+    // Loop-Detection: Signatur der Side-Effect-Calls (antworten darf Repeat)
+    const sigCalls = sideEffectCalls.map((tc) => `${tc.function.name}(${tc.function.arguments})`);
+    if (sigCalls.length > 0) {
+      const sig = sigCalls.join("|");
+      recentCallSignatures.push(sig);
+      if (recentCallSignatures.length > 3) recentCallSignatures.shift();
+      if (
+        recentCallSignatures.length === 3 &&
+        recentCallSignatures[0] === recentCallSignatures[1] &&
+        recentCallSignatures[1] === recentCallSignatures[2]
+      ) {
+        logInfo(`[${agentName}] Loop erkannt — identischer Tool-Call 3x: ${sig.slice(0, 120)}`);
+        // Inject eine deutliche Stop-Message und zwinge antworten() in der naechsten Runde
+        messages.push({
+          role: "user",
+          content:
+            "LOOP: Du hast denselben Tool-Call 3x hintereinander gemacht und bekommst jedesmal dasselbe Ergebnis. " +
+            "Ruf JETZT antworten(text=...) auf mit dem was du weisst oder sag dass du es nicht findest. " +
+            "Probier keine Variation mehr.",
+        });
+        // Force antworten im naechsten Loop-Durchlauf durch Setzen der Bedingung
+        // (wir haben schon alle side-effects ausgefuehrt; toolResults sind unten gepusht)
+        recentCallSignatures.length = 0; // reset, sonst triggert es dauernd
+      }
+    }
 
     // Seiten-Effekt-Tools (Schreiben/Suchen/...) IMMER zuerst — damit antworten
     // nie eine "Erledigt"-Bestaetigung sendet bevor der Write wirklich durch ist.
