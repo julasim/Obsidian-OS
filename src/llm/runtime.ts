@@ -55,14 +55,21 @@ const PLAN_TOOL: ChatTool = {
   function: {
     name: "plan",
     description:
-      "Internes Scratchpad fuer Multi-Step-Tasks. Nutze es bei Anfragen die >=3 Schritte " +
-      "brauchen (z.B. 'lies alle Tasks und fass sie zusammen' oder 'verschieb Notiz X + benenn " +
-      "Projekt um'). Hilft dir den roten Faden zu behalten und keine Schritte zu uebersehen. " +
-      "aktion=erstellen: neuen Plan anlegen (schritte als Array). " +
-      "aktion=abhaken: Schritt als erledigt markieren (index 0-basiert). " +
-      "aktion=hinzufuegen: Schritt am Ende anhaengen. " +
-      "aktion=status: aktuellen Plan anzeigen. " +
-      "Bei einfachen Anfragen (eine Aktion, direkte Antwort) nicht noetig.",
+      "Internes Scratchpad fuer Multi-Step-Tasks (>=3 Schritte oder 'lies X und mach Y mit Z').\n\n" +
+      "WORKFLOW (strikt einhalten):\n" +
+      "1. SCOUT ZUERST — bevor du plan(erstellen) callst, lies die relevanten Dateien/Ordner mit " +
+      "vault(suchen/lesen/projekt_inhalt) damit du den echten Stand kennst. Ohne Kontext produzierst " +
+      "du einen Plan mit falschen Annahmen.\n" +
+      "2. plan(aktion=erstellen, schritte=[...]) — mit den ECHTEN Infos aus Schritt 1, konkrete " +
+      "Schritte (Dateinamen, Zielordner, genaue Aktionen).\n" +
+      "3. EXEKUTIEREN — arbeite Schritt fuer Schritt ab. NACH JEDEM Schritt IMMER " +
+      "plan(aktion=abhaken, index=N) callen, dann erst zum naechsten Schritt. " +
+      "Nicht mehrere Schritte auf einmal machen ohne abzuhaken.\n" +
+      "4. Wenn waehrend der Ausfuehrung neue Arbeit auftaucht: plan(aktion=hinzufuegen, schritt=...).\n" +
+      "5. Erst wenn alle Schritte [x] sind → antworten(text=...).\n\n" +
+      "aktion=status falls du den Ueberblick verloren hast.\n\n" +
+      "Bei EINFACHEN Anfragen (eine Aktion, direkte Antwort, 1-2 Tool-Calls) plan() NICHT nutzen — " +
+      "das ist Overhead. Faustregel: wenn du >=3 Tool-Calls brauchst, zuerst scouten und planen.",
     parameters: {
       type: "object",
       properties: {
@@ -73,7 +80,7 @@ const PLAN_TOOL: ChatTool = {
         },
         schritte: {
           type: "array",
-          description: "Liste der Schritte (nur bei aktion=erstellen). Jeder Schritt als kurze Beschreibung.",
+          description: "Liste der Schritte (nur bei aktion=erstellen). Jeder Schritt konkret und ausfuehrbar, keine Platzhalter.",
         },
         index: {
           type: "number",
@@ -106,9 +113,17 @@ function formatPlan(plan: PlanStep[]): string {
   return `${header}\n${body}`;
 }
 
+/** Liefert den naechsten offenen Schritt als Hint, oder null wenn fertig. */
+function nextOpenStep(plan: PlanStep[]): { idx: number; text: string } | null {
+  const idx = plan.findIndex((s) => !s.done);
+  if (idx < 0) return null;
+  return { idx, text: plan[idx].text };
+}
+
 function handlePlanAction(
   plan: PlanStep[],
   args: Record<string, unknown>,
+  scoutedBefore: boolean,
 ): string {
   const aktion = String(args.aktion ?? "").trim();
   switch (aktion) {
@@ -119,7 +134,14 @@ function handlePlanAction(
       }
       plan.length = 0;
       for (const s of schritte) plan.push({ text: String(s), done: false });
-      return `${formatPlan(plan)}\n\nPlan angelegt. Arbeite die Schritte nun der Reihe nach ab und hake sie nach jedem Schritt mit plan(aktion=abhaken, index=N) ab.`;
+      const first = nextOpenStep(plan);
+      const nextHint = first
+        ? `\n\n→ NAECHSTE AKTION: Schritt ${first.idx} ausfuehren: "${first.text}". Danach plan(aktion=abhaken, index=${first.idx}).`
+        : "";
+      const scoutWarn = !scoutedBefore
+        ? "\n\nWARNUNG: Plan wurde ohne vorherigen Scout erstellt. Falls deine Schritte auf Annahmen basieren (Dateien existieren, Ordnerstruktur, etc.) — erst verifizieren mit vault(lesen/suchen/projekt_inhalt) und ggf. plan(aktion=erstellen) nochmal mit korrekten Infos."
+        : "";
+      return `${formatPlan(plan)}\n\nPlan angelegt.${nextHint}${scoutWarn}`;
     }
     case "abhaken": {
       const idx = Number(args.index);
@@ -128,7 +150,11 @@ function handlePlanAction(
       }
       if (plan[idx].done) return `${formatPlan(plan)}\n\nSchritt ${idx} war bereits erledigt.`;
       plan[idx].done = true;
-      return formatPlan(plan);
+      const next = nextOpenStep(plan);
+      const nextHint = next
+        ? `\n\n→ NAECHSTE AKTION: Schritt ${next.idx} ausfuehren: "${next.text}". Danach plan(aktion=abhaken, index=${next.idx}).`
+        : "\n\nAlle Schritte erledigt — jetzt antworten(text=...) callen.";
+      return `${formatPlan(plan)}${nextHint}`;
     }
     case "hinzufuegen": {
       const text = String(args.schritt ?? "").trim();
@@ -136,8 +162,15 @@ function handlePlanAction(
       plan.push({ text, done: false });
       return formatPlan(plan);
     }
-    case "status":
-      return formatPlan(plan);
+    case "status": {
+      const next = nextOpenStep(plan);
+      const nextHint = next
+        ? `\n\n→ NAECHSTE AKTION: Schritt ${next.idx} ausfuehren: "${next.text}".`
+        : plan.length > 0
+        ? "\n\nAlle Schritte erledigt — jetzt antworten(text=...) callen."
+        : "";
+      return `${formatPlan(plan)}${nextHint}`;
+    }
     default:
       return `Fehler: unbekannte aktion "${aktion}". Erlaubt: erstellen, abhaken, hinzufuegen, status.`;
   }
@@ -177,6 +210,10 @@ export async function processAgent(agentName: string, userMessage: string): Prom
 
   // Plan-State: pro User-Turn. LLM manipuliert via plan()-Tool.
   const plan: PlanStep[] = [];
+  // Tracking: hat das Modell vor plan(erstellen) gescoutet?
+  // Zaehlt wenn ein lesender Call (vault, notiz=frontmatter, memory=nachschlagen)
+  // durchgefuehrt wurde, BEVOR der erste erstellen-Call kam.
+  let scoutedBefore = false;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     // Zwei Schwellen:
@@ -310,6 +347,30 @@ export async function processAgent(agentName: string, userMessage: string): Prom
       }
     }
 
+    // Scout-Tracking: read-only Tools zaehlen als "scouting" fuer die Plan-Pruefung.
+    // Side-effect free: vault(alle modi sind lesend), notiz(frontmatter), memory(nachschlagen/lesen/profil/glossar).
+    const READ_ONLY_CALLS = new Set(["vault"]);
+    const READ_ONLY_SUBMODES: Record<string, Set<string>> = {
+      notiz: new Set(["frontmatter"]),
+      memory: new Set(["lesen", "nachschlagen", "profil", "glossar"]),
+    };
+    for (const tc of sideEffectCalls) {
+      if (READ_ONLY_CALLS.has(tc.function.name)) {
+        scoutedBefore = true;
+        break;
+      }
+      const subModes = READ_ONLY_SUBMODES[tc.function.name];
+      if (subModes) {
+        try {
+          const args = JSON.parse(tc.function.arguments || "{}") as { modus?: string };
+          if (args.modus && subModes.has(args.modus)) {
+            scoutedBefore = true;
+            break;
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
     // Plan-Calls synchron/lokal abarbeiten
     const planResults: ChatMessage[] = planCalls.map((tc) => {
       let args: Record<string, unknown> = {};
@@ -322,7 +383,7 @@ export async function processAgent(agentName: string, userMessage: string): Prom
           content: `Fehler: Ungueltige plan()-Argumente.`,
         };
       }
-      const content = handlePlanAction(plan, args);
+      const content = handlePlanAction(plan, args, scoutedBefore);
       return { role: "tool" as const, tool_call_id: tc.id, content };
     });
 
