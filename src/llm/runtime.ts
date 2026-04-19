@@ -97,12 +97,16 @@ export async function processAgent(agentName: string, userMessage: string): Prom
   // - Zaehlt wie oft eine Signatur (Tool+Args) gecalled wurde (pro Turn).
   // - Bei >=2 identischen Calls hintereinander: Ban — weitere Calls mit
   //   derselben Signatur werden nicht mehr ausgefuehrt, stattdessen gibt es
-  //   ein synthetisches Error-Result, das dem LLM klar macht: "probier was
-  //   anderes". Vorher wurde der Loop nur gewarnt, LLM ignorierte die
-  //   Warnung und callte 60+ mal dasselbe.
+  //   ein synthetisches Error-Result.
+  // - Signatur-Key canonicalisiert (Object-Keys sortiert), sonst umgeht das
+  //   Modell den Ban trivial durch Reorder der Args (real beobachtet:
+  //   {modus,faellig,sortierung} vs {modus,sortierung,faellig} waren vorher
+  //   zwei verschiedene Signatures).
   const callCounts = new Map<string, number>();
   const bannedSignatures = new Set<string>();
   let softHintSent = false;
+  let successHintSent = false;
+  let successfulDataCalls = 0;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     // Zwei Schwellen:
@@ -210,14 +214,28 @@ export async function processAgent(agentName: string, userMessage: string): Prom
       .join(", ");
     logInfo(`[${agentName}] Tools (Runde ${round + 1}): ${toolSummary}`);
 
+    // Canonical signature: Object-Keys sortiert, damit Reordering nicht als
+    // neue Signatur zaehlt. Normalisiert auch Whitespace/Quoting-Unterschiede.
+    const canonicalSig = (name: string, argsJson: string): string => {
+      try {
+        const parsed = JSON.parse(argsJson || "{}");
+        if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const sorted: Record<string, unknown> = {};
+          for (const k of Object.keys(parsed).sort()) sorted[k] = (parsed as Record<string, unknown>)[k];
+          return `${name}(${JSON.stringify(sorted)})`;
+        }
+      } catch { /* fallback zu raw */ }
+      return `${name}(${argsJson})`;
+    };
+
     // Seiten-Effekt-Tools (Schreiben/Suchen/...) IMMER zuerst — damit antworten
     // nie eine "Erledigt"-Bestaetigung sendet bevor der Write wirklich durch ist.
     // plan() laeuft ueber den normalen Executor (file-basierter State).
-    // Loop-Schutz: pro Signatur (name+args) wird nach >=2 identischen Calls
-    // fuer den Rest des Turns geblockt.
+    // Loop-Schutz: pro Signatur (name+args canonical) wird nach >=2 identischen
+    // Calls fuer den Rest des Turns geblockt.
     const toolResults: ChatMessage[] = await Promise.all(
       sideEffectCalls.map(async (tc) => {
-        const sig = `${tc.function.name}(${tc.function.arguments})`;
+        const sig = canonicalSig(tc.function.name, tc.function.arguments);
         const loopRelevant = tc.function.name !== "plan";
 
         // Ban-Check: wenn diese Signatur in diesem Turn schon >=2x aufgetreten ist
@@ -258,6 +276,12 @@ export async function processAgent(agentName: string, userMessage: string): Prom
             bannedSignatures.add(sig);
             logInfo(`[${agentName}] Loop-Ban (Runde ${round + 1}, ${count}x): ${sig.slice(0, 120)}`);
           }
+
+          // Success-Tracking: zaehle erfolgreiche Daten-Calls (kein Fehler).
+          // Der Hint wird weiter unten nach dem Promise.all eingeschoben.
+          if (!result.startsWith("Fehler:") && !result.startsWith("BLOCKED")) {
+            successfulDataCalls++;
+          }
         }
 
         // Tool-Result-Preview in den Log schreiben — bisher komplett unsichtbar,
@@ -268,6 +292,28 @@ export async function processAgent(agentName: string, userMessage: string): Prom
         return { role: "tool" as const, tool_call_id: tc.id, content: result };
       }),
     );
+
+    // Success-Hint: nach dem ersten erfolgreichen Daten-Call genau einmal
+    // einschieben, damit das Modell nicht "zur Sicherheit nochmal" mit Mini-
+    // Variationen retry't. Pragmatisch: der haeufigste Verschwendungs-Pattern
+    // ist "Call 1 erfolgreich → Call 2 minimal anders → Call 3 minimal anders → ...".
+    if (!successHintSent && successfulDataCalls >= 1 && !antwortenCall) {
+      successHintSent = true;
+      logInfo(`[${agentName}] Success-Hint eingeschoben (Runde ${round + 1})`);
+      messages.push(...toolResults);
+      messages.push({
+        role: "user",
+        content:
+          "Du hast bereits ein gueltiges Tool-Ergebnis. Falls es die Nutzer-Frage beantwortet, " +
+          "JETZT antworten(text=...) mit dem Ergebnis 1:1 (Listen nicht umformatieren, Felder " +
+          "nicht weglassen). Nicht mit kleinen Argument-Variationen denselben Call wiederholen " +
+          "\"zur Sicherheit\". Nur ein weiterer Tool-Call wenn du WIRKLICH andere Daten brauchst.",
+      });
+      for (const r of toolResults) totalChars += JSON.stringify(r).length;
+      // Weiter zum naechsten LLM-Call — nicht die normale tool-result-Push-Logik benutzen,
+      // weil wir schon gepusht haben.
+      continue;
+    }
 
     // antworten-Call: finaler User-Text, nach allen Side-Effects
     if (antwortenCall) {
