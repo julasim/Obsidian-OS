@@ -30,7 +30,7 @@ fail() { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 step() { echo -e "\n${BOLD}${CYAN}  ── $1${NC}\n"; }
 
 echo -e "\n${BOLD}${CYAN}  ╔══════════════════════════════════════╗${NC}"
-echo -e "${BOLD}${CYAN}  ║         $BRAND Update              ║${NC}"
+echo -e "${BOLD}${CYAN}  ║          $BRAND Update          ║${NC}"
 echo -e "${BOLD}${CYAN}  ╚══════════════════════════════════════╝${NC}\n"
 
 # ── Preflight ────────────────────────────────────────────────────────────────
