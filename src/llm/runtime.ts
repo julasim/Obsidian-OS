@@ -42,7 +42,106 @@ const ANTWORTEN_TOOL: ChatTool = {
   },
 };
 
-const ALL_TOOLS: ChatTool[] = [ANTWORTEN_TOOL, ...TOOLS];
+// ---- Plan-Meta-Tool ----
+// Interner Scratchpad fuer Multi-Step-Tasks. Verhindert dass das LLM bei
+// komplexen Anfragen den Faden verliert oder falsche Tools callt. Pattern:
+//   1. LLM erkennt Multi-Step → plan(aktion="erstellen", schritte=[...])
+//   2. LLM arbeitet Schritt fuer Schritt ab, callt andere Tools
+//   3. Nach jedem Schritt: plan(aktion="abhaken", index=N)
+//   4. Am Ende: antworten()
+// State ist pro User-Turn lokal (resettet bei jedem processAgent-Call).
+const PLAN_TOOL: ChatTool = {
+  type: "function",
+  function: {
+    name: "plan",
+    description:
+      "Internes Scratchpad fuer Multi-Step-Tasks. Nutze es bei Anfragen die >=3 Schritte " +
+      "brauchen (z.B. 'lies alle Tasks und fass sie zusammen' oder 'verschieb Notiz X + benenn " +
+      "Projekt um'). Hilft dir den roten Faden zu behalten und keine Schritte zu uebersehen. " +
+      "aktion=erstellen: neuen Plan anlegen (schritte als Array). " +
+      "aktion=abhaken: Schritt als erledigt markieren (index 0-basiert). " +
+      "aktion=hinzufuegen: Schritt am Ende anhaengen. " +
+      "aktion=status: aktuellen Plan anzeigen. " +
+      "Bei einfachen Anfragen (eine Aktion, direkte Antwort) nicht noetig.",
+    parameters: {
+      type: "object",
+      properties: {
+        aktion: {
+          type: "string",
+          enum: ["erstellen", "abhaken", "hinzufuegen", "status"],
+          description: "Welche Plan-Operation (Pflicht)",
+        },
+        schritte: {
+          type: "array",
+          description: "Liste der Schritte (nur bei aktion=erstellen). Jeder Schritt als kurze Beschreibung.",
+        },
+        index: {
+          type: "number",
+          description: "Index des Schritts der abgehakt werden soll (nur bei aktion=abhaken, 0-basiert)",
+        },
+        schritt: {
+          type: "string",
+          description: "Text des neuen Schritts (nur bei aktion=hinzufuegen)",
+        },
+      },
+      required: ["aktion"],
+    },
+  },
+};
+
+const ALL_TOOLS: ChatTool[] = [ANTWORTEN_TOOL, PLAN_TOOL, ...TOOLS];
+
+// ---- Plan-Handler (runtime-lokal) ----
+// State lebt pro User-Turn. Der Plan ist nur innerhalb eines processAgent-Calls
+// sichtbar und wird beim naechsten User-Message geleert — genau wie ein
+// mentaler Scratchpad fuer "diese Aufgabe".
+
+interface PlanStep { text: string; done: boolean; }
+
+function formatPlan(plan: PlanStep[]): string {
+  if (plan.length === 0) return "Plan ist leer.";
+  const open = plan.filter((s) => !s.done).length;
+  const header = `Plan (${plan.length - open}/${plan.length} erledigt):`;
+  const body = plan.map((s, i) => `${s.done ? "[x]" : "[ ]"} ${i}: ${s.text}`).join("\n");
+  return `${header}\n${body}`;
+}
+
+function handlePlanAction(
+  plan: PlanStep[],
+  args: Record<string, unknown>,
+): string {
+  const aktion = String(args.aktion ?? "").trim();
+  switch (aktion) {
+    case "erstellen": {
+      const schritte = args.schritte;
+      if (!Array.isArray(schritte) || schritte.length === 0) {
+        return "Fehler: schritte muss ein nicht-leeres Array sein.";
+      }
+      plan.length = 0;
+      for (const s of schritte) plan.push({ text: String(s), done: false });
+      return `${formatPlan(plan)}\n\nPlan angelegt. Arbeite die Schritte nun der Reihe nach ab und hake sie nach jedem Schritt mit plan(aktion=abhaken, index=N) ab.`;
+    }
+    case "abhaken": {
+      const idx = Number(args.index);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= plan.length) {
+        return `Fehler: index ${args.index} ausserhalb des Plans (0..${plan.length - 1}).`;
+      }
+      if (plan[idx].done) return `${formatPlan(plan)}\n\nSchritt ${idx} war bereits erledigt.`;
+      plan[idx].done = true;
+      return formatPlan(plan);
+    }
+    case "hinzufuegen": {
+      const text = String(args.schritt ?? "").trim();
+      if (!text) return "Fehler: schritt darf nicht leer sein.";
+      plan.push({ text, done: false });
+      return formatPlan(plan);
+    }
+    case "status":
+      return formatPlan(plan);
+    default:
+      return `Fehler: unbekannte aktion "${aktion}". Erlaubt: erstellen, abhaken, hinzufuegen, status.`;
+  }
+}
 
 // ---- Agent Runtime ----
 
@@ -75,6 +174,9 @@ export async function processAgent(agentName: string, userMessage: string): Prom
   // Verhindert dass das Modell bei einer Nicht-gefunden-Antwort endlos retry't.
   const recentCallSignatures: string[] = [];
   let softHintSent = false;
+
+  // Plan-State: pro User-Turn. LLM manipuliert via plan()-Tool.
+  const plan: PlanStep[] = [];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     // Zwei Schwellen:
@@ -166,7 +268,12 @@ export async function processAgent(agentName: string, userMessage: string): Prom
 
     // antworten-Call raussuchen — der liefert den finalen User-Text
     const antwortenCall = functionCalls.find((tc) => tc.function.name === "antworten");
-    const sideEffectCalls = functionCalls.filter((tc) => tc.function.name !== "antworten");
+    // plan-Calls werden lokal behandelt (kein Filesystem-Side-Effect),
+    // zaehlen nicht als "sideEffect" fuer Loop-Detection (Plan-Spam ist OK).
+    const planCalls = functionCalls.filter((tc) => tc.function.name === "plan");
+    const sideEffectCalls = functionCalls.filter(
+      (tc) => tc.function.name !== "antworten" && tc.function.name !== "plan",
+    );
 
     const toolSummary = functionCalls
       .map((tc) => {
@@ -203,6 +310,22 @@ export async function processAgent(agentName: string, userMessage: string): Prom
       }
     }
 
+    // Plan-Calls synchron/lokal abarbeiten
+    const planResults: ChatMessage[] = planCalls.map((tc) => {
+      let args: Record<string, unknown> = {};
+      try {
+        args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
+      } catch {
+        return {
+          role: "tool" as const,
+          tool_call_id: tc.id,
+          content: `Fehler: Ungueltige plan()-Argumente.`,
+        };
+      }
+      const content = handlePlanAction(plan, args);
+      return { role: "tool" as const, tool_call_id: tc.id, content };
+    });
+
     // Seiten-Effekt-Tools (Schreiben/Suchen/...) IMMER zuerst — damit antworten
     // nie eine "Erledigt"-Bestaetigung sendet bevor der Write wirklich durch ist.
     const toolResults: ChatMessage[] = await Promise.all(
@@ -231,14 +354,15 @@ export async function processAgent(agentName: string, userMessage: string): Prom
       } catch {
         // bei kaputten args: fallback
       }
-      // tool_call_id des antworten-Calls auch noch als tool-message quittieren,
-      // damit der naechste (ggf.) API-Call die message-Sequenz nicht verletzt.
+      // Alle Tool-Results in die Message-History eintragen, in derselben
+      // Reihenfolge wie die tool_calls. Reihenfolge: plan → side-effect → antworten.
+      messages.push(...planResults);
+      messages.push(...toolResults);
       messages.push({
         role: "tool" as const,
         tool_call_id: antwortenCall.id,
         content: "OK",
       });
-      messages.push(...toolResults);
 
       appendAgentConversation(agentName, userMessage, antwortText);
       logInfo(`[${agentName}] Antwort via antworten (Runde ${round + 1}, ${antwortText.length} Z)`);
@@ -246,7 +370,9 @@ export async function processAgent(agentName: string, userMessage: string): Prom
       return antwortText;
     }
 
+    messages.push(...planResults);
     messages.push(...toolResults);
+    for (const r of planResults) totalChars += JSON.stringify(r).length;
     for (const r of toolResults) totalChars += JSON.stringify(r).length;
 
     // History-Pruning: tool+assistant Paare zusammen halten.
