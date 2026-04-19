@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { vaultPath, safePath, ensureDir, walkMarkdownFiles } from "../_lib/vault.js";
 import { DEFAULT_TERMIN_FILE } from "../_lib/config.js";
-import { ok, err, list, EMOJI } from "../_lib/format.js";
+import { ok, err, list, EMOJI, safeHandler } from "../_lib/format.js";
 import { todayStr } from "../_lib/date.js";
 import type { ToolHandler } from "../_lib/types.js";
 
@@ -246,7 +246,7 @@ async function handleAuflisten(args: Record<string, string | number | boolean | 
 // Dispatcher
 // ============================================================
 
-export const handler: ToolHandler = async (args) => {
+export const handler: ToolHandler = safeHandler(async (args) => {
   const modus = String(args.modus ?? "auflisten");
 
   switch (modus) {
@@ -254,4 +254,4 @@ export const handler: ToolHandler = async (args) => {
     case "auflisten": return handleAuflisten(args);
     default: return err(`Unbekannter Modus: "${modus}". Erlaubt: erfassen, auflisten`);
   }
-};
+});

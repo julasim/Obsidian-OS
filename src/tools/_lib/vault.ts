@@ -5,7 +5,7 @@
 
 import fs from "fs";
 import path from "path";
-import { VAULT_PATH, SKIP_DIRS, LOCALE, PROJECTS_DIR } from "./config.js";
+import { VAULT_PATH, SKIP_DIRS, PROJECTS_DIR } from "./config.js";
 
 export const vaultPath: string = VAULT_PATH;
 
@@ -44,21 +44,6 @@ export function projectPath(projectName?: string, ...subPaths: string[]): string
 /** Timestamp-basierter Dateiname (YYYY-MM-DDTHH-MM-SS) */
 export function timestampFilename(): string {
   return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-}
-
-/** Standard-Frontmatter mit created + source */
-export function frontmatter(source = "extern"): string {
-  const now = new Date();
-  const date = now.toLocaleDateString(LOCALE, {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const time = now.toLocaleTimeString(LOCALE, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `---\ncreated: ${date} ${time}\nsource: ${source}\n---\n\n`;
 }
 
 /** Ordner anlegen falls noetig (rekursiv) */

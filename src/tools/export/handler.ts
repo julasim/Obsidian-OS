@@ -12,7 +12,7 @@ import {
 import { ensureDir, vaultPath, safePath } from "../_lib/vault.js";
 import { EXPORT_DIR } from "../_lib/config.js";
 import { readNoteContent, parseNote, safeFilename, stripInline } from "../_lib/note-content.js";
-import { ok as fmtOk, err as fmtErr, relPath } from "../_lib/format.js";
+import { ok as fmtOk, err as fmtErr, relPath, safeHandler } from "../_lib/format.js";
 import type { ToolHandler } from "../_lib/types.js";
 
 // ---- PDF ---- ---- ---- ---- ---- ---- ---- ---- ---- ----
@@ -449,7 +449,7 @@ async function generateDocx(title: string, body: string): Promise<Buffer> {
 // Dispatcher
 // ============================================================
 
-export const handler: ToolHandler = async (args) => {
+export const handler: ToolHandler = safeHandler(async (args) => {
   const format = String(args.format ?? "").trim().toLowerCase();
   if (format !== "pdf" && format !== "docx") {
     return fmtErr(`Unbekanntes Format: "${format}". Erlaubt: pdf, docx`);
@@ -493,4 +493,4 @@ export const handler: ToolHandler = async (args) => {
   } catch (e) {
     return fmtErr(`${format.toUpperCase()}-Export fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
   }
-};
+});

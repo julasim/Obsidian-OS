@@ -15,7 +15,7 @@ import {
   TOOL_OUTPUT_MAX_CHARS,
   SKIP_DIRS,
 } from "../_lib/config.js";
-import { EMOJI, list, err } from "../_lib/format.js";
+import { EMOJI, list, err, safeHandler } from "../_lib/format.js";
 import {
   getOrCreateDailyNote,
   readDailyNote,
@@ -721,7 +721,7 @@ function guessSource(lower: string, _fullMap: Map<string, string>): string {
 // Dispatcher
 // ============================================================
 
-export const handler: ToolHandler = async (args) => {
+export const handler: ToolHandler = safeHandler(async (args) => {
   const modus = String(args.modus ?? "");
 
   switch (modus) {
@@ -737,4 +737,4 @@ export const handler: ToolHandler = async (args) => {
         `Unbekannter Modus: "${modus}". Erlaubt: lesen, suchen, navigation, projekte, projekt_inhalt, daily, dekodieren`,
       );
   }
-};
+});

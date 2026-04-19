@@ -1,7 +1,7 @@
 import fs from "fs";
 import { ensureDir } from "../_lib/vault.js";
 import { LOCALE } from "../_lib/config.js";
-import { ok, err } from "../_lib/format.js";
+import { ok, err, safeHandler } from "../_lib/format.js";
 import {
   readHotCache,
   readGlossary,
@@ -223,7 +223,7 @@ async function handleSpeichern(args: ToolArgs): Promise<string> {
 // Dispatcher (Switch-Pattern konsistent mit anderen Tools)
 // ============================================================
 
-export const handler: ToolHandler = async (args) => {
+export const handler: ToolHandler = safeHandler(async (args) => {
   const modus = String(args.modus ?? "speichern");
 
   switch (modus) {
@@ -238,4 +238,4 @@ export const handler: ToolHandler = async (args) => {
         `Unbekannter Modus: "${modus}". Erlaubt: speichern, lesen, loeschen, nachschlagen, profil, glossar`,
       );
   }
-};
+});

@@ -1,90 +1,189 @@
 # aufgaben
 
-Verwaltet Aufgaben im Vault mit Section-basierter Struktur. Unterstuetzt Erfassen, Auflisten, Erledigen (Strikethrough + Datum + Verschieben nach Erledigt), Verschieben zwischen Sections und Warte-auf-Tracking.
+Maechtiges Task-Management — 100% Obsidian-Tasks-Plugin-kompatibel. Natural-Language-Input, wiederkehrende Tasks, Tags/Kontext, Subtasks, Dashboard, mehrere Views.
 
 ## Modi
 
 | Modus | Zweck |
 |---|---|
-| erfassen | Neue Checkbox-Aufgabe in Section "Aktiv" anlegen |
-| auflisten | Offene Aufgaben mit Filtern auflisten |
-| erledigen | Aufgabe abhaken, durchstreichen und nach "Erledigt" verschieben |
-| verschieben | Aufgabe zwischen Sections (Aktiv, Warte auf, Irgendwann) verschieben |
-| warte_auf | Warte-Aufgabe mit Person und Datum in Section "Warte auf" anlegen |
+| `erfassen` | Neue Aufgabe (NLP-Input moeglich, auch Subtasks via parent_text) |
+| `auflisten` | Offene Tasks mit Filtern und Ansichten |
+| `erledigen` | Aufgabe abhaken (recurring erzeugt naechste Instanz automatisch) |
+| `verschieben` | Zwischen Sections verschieben (Aktiv/Warte auf/Irgendwann/Erledigt) |
+| `warte_auf` | Warte-Aufgabe mit Person |
+| `bearbeiten` | Felder einer bestehenden Task aendern |
+| `details` | Detail-Zeilen zu einer Task hinzufuegen/zeigen |
+| `bulk` | Mehrere Tasks auf einmal erledigen/verschieben |
+
+## Obsidian-Tasks-Syntax
+
+Das Tool schreibt Tasks im offiziellen Obsidian-Tasks-Format. Alle erzeugten Tasks funktionieren direkt im Obsidian-Tasks-Plugin.
+
+```
+- [ ] Task-Text 🔴 🛫 2026-04-20 📅 2026-04-25 ⏳ 2026-04-22 ⏱️ 2h 🔁 every Monday ➕ 2026-04-15 #work @laptop ^task-id
+    - Eingeruckte Detail-Zeilen (Subtasks oder Notizen)
+```
+
+| Emoji | Bedeutung |
+|---|---|
+| 🔴 🟠 🟡 🟢 🔵 | Prioritaet hoch/mittel-hoch/mittel/niedrig-mittel/niedrig |
+| 🛫 | Start-Datum (Task erscheint erst ab diesem Datum) |
+| 📅 | Faelligkeit (due) |
+| ⏳ | Scheduled-Datum |
+| ➕ | Erstelldatum |
+| ✅ | Erledigt-Datum |
+| 🔁 | Wiederholungs-Pattern |
+| ⏱️ | Zeitschaetzung (Custom) |
+| 🔗 | Plan-Referenz (Custom) |
+| #tag | Obsidian-Tag |
+| @kontext | Context-Marker |
+| ^id | Block-ID fuer stabile Referenzen |
+
+## Natural-Language-Parsing
+
+Der `text`-Parameter wird IMMER durch NLP geparst. Erkannt werden:
+
+| Input | Wird zu |
+|---|---|
+| `heute`, `morgen`, `uebermorgen` | due-Datum |
+| `naechsten Montag`, `montag` | naechster Wochentag |
+| `in 3 Tagen`, `in 2 Wochen` | Datum |
+| `jeden Montag`, `jede Woche`, `jaehrlich` | 🔁 Recurrence |
+| `alle 3 Tage` | 🔁 every 3 days |
+| `!!!` / `!!` / `!` | Prio hoch/mittel-hoch/mittel |
+| `wichtig`, `dringend`, `urgent` | Prio hoch |
+| `#tag` | Tag |
+| `@kontext` | Kontext |
+| `2h`, `30min`, `1d` | ⏱️ Schaetzung |
+
+Strukturierte Parameter (`datum`, `prioritaet`, `tags`, ...) ueberschreiben NLP-Werte.
 
 ## Parameter
 
-| Name | Typ | Pflicht | Modus | Beschreibung |
-|---|---|---|---|---|
-| `modus` | enum | ja | alle | "erfassen", "auflisten", "erledigen", "verschieben", "warte_auf" |
-| `text` | string | ja | erfassen, erledigen, verschieben, warte_auf | Aufgabentext (erfassen/warte_auf) oder Suchtext (erledigen/verschieben) |
-| `datum` | string | nein | erfassen | Faelligkeitsdatum YYYY-MM-DD |
-| `prioritaet` | enum | nein | erfassen, auflisten | "hoch", "mittel", "niedrig". Bei erfassen: Emoji. Bei auflisten: Filter |
-| `projekt` | string | nein | erfassen, warte_auf | Projektname — Shortcut fuer Projekte/{name}/Aufgaben.md |
-| `datei` | string | nein | erfassen, erledigen, verschieben, warte_auf | Explizite Zieldatei vault-relativ (Default: Aufgaben.md) |
-| `ordner` | string | nein | auflisten | Nur Aufgaben aus diesem Ordner |
-| `faellig` | enum | nein | auflisten | "heute", "ueberfaellig", "woche", "alle" (Default) |
-| `limit` | number | nein | auflisten | Max. Anzahl (Default: 50) |
-| `nach` | enum | nein | verschieben | Ziel-Section: "aktiv", "warte_auf", "irgendwann" |
-| `person` | string | ja | warte_auf | Auf wen gewartet wird |
+| Name | Typ | Modi | Beschreibung |
+|---|---|---|---|
+| `modus` | enum | alle | Pflicht |
+| `text` | string | alle | Aufgabentext (NLP) oder Suchtext bei Mutationen |
+| `datum` | string | erfassen, bearbeiten | 📅 YYYY-MM-DD |
+| `start` | string | erfassen, bearbeiten | 🛫 YYYY-MM-DD |
+| `scheduled` | string | erfassen, bearbeiten | ⏳ YYYY-MM-DD |
+| `prioritaet` | enum | erfassen, bearbeiten, auflisten (Filter) | hoch/mittel-hoch/mittel/niedrig-mittel/niedrig |
+| `wiederholung` | string | erfassen, bearbeiten | 🔁 "jeden Montag", "every week" |
+| `schaetzung` | string | erfassen, bearbeiten | ⏱️ "30m", "2h" |
+| `tags` | string | erfassen, bearbeiten | Komma-separiert ohne # |
+| `kontext` | string | erfassen, bearbeiten | Komma-separiert ohne @ |
+| `plan_ref` | string | erfassen, bearbeiten | 🔗 "plan-id#2" |
+| `details` | string | erfassen, details | Mehrzeilig mit \n |
+| `parent_text` | string | erfassen | Suchtext fuer Parent → Subtask |
+| `projekt` | string | erfassen, warte_auf | Shortcut fuer Projekte/<name>/Aufgaben.md |
+| `datei` | string | alle | Zieldatei (Default: Aufgaben.md) |
+| `ordner` | string | auflisten, bulk | Ordner-Filter |
+| `ansicht` | enum | auflisten | default/dashboard/heute/woche/ueberfaellig/projekt/tag/kontext/nach_prio |
+| `faellig` | enum | auflisten | heute/ueberfaellig/woche/alle |
+| `sortierung` | enum | auflisten | default/nach_prio/nach_datum |
+| `tag` | string | auflisten | Filter nach Tag |
+| `kontext_filter` | string | auflisten | Filter nach Kontext |
+| `person` | string | auflisten, warte_auf | Person-Filter / wen warten |
+| `start_respektieren` | string | auflisten | Default 'true' — Tasks mit start>heute ausblenden |
+| `limit` | number | auflisten | Default 50 |
+| `nach` | enum | verschieben | aktiv/warte_auf/irgendwann/erledigt |
+| `neuer_text` | string | bearbeiten | Task-Text ersetzen |
+| `tag_action` | enum | bearbeiten | add/remove/set |
+| `aktion` | enum | details | hinzufuegen/zeigen |
+| `bulk_aktion` | enum | bulk | erledigen/verschieben |
+| `bestaetigung` | string | bulk | 'true' bei >20 Tasks |
 
-## Verhalten
+## Datei-Struktur
 
-**Section-Struktur in Aufgaben.md:**
-Jede Aufgabendatei hat vier H2-Sections: `## Aktiv`, `## Warte auf`, `## Irgendwann`, `## Erledigt`. Neue Dateien werden automatisch mit diesem Template erstellt.
+Tasks werden in `Aufgaben.md` (oder `Projekte/<name>/Aufgaben.md`) in Sections gespeichert:
 
-**Erfassen:** Neue Aufgaben werden in `## Aktiv` eingefuegt. Format: `- [ ] Text <Prio-Emoji> <Datum-Emoji>`. Prioritaet-Emojis: hoch=rot, mittel=orange, niedrig=blau. Bei `projekt`-Parameter wird automatisch `Projekte/{name}/Aufgaben.md` genutzt.
+```markdown
+# Aufgaben
 
-**Erledigen-Workflow:** Sucht die Aufgabe per Suchtext, entfernt sie aus der aktuellen Section, wandelt sie in `- [x] ~~Text~~ (YYYY-MM-DD)` um und fuegt sie in `## Erledigt` ein.
+## Aktiv
+- [ ] Aktive Task 🔴 📅 2026-04-20
 
-**Verschieben:** Sucht die Aufgabe per Suchtext (offene oder geschlossene Checkboxen), entfernt sie und fuegt sie in die Ziel-Section ein.
+## Warte auf
+- [ ] Warte-Task — warte auf Max, seit 2026-04-15
 
-**Warte-auf:** Erstellt eine Aufgabe im Format `- [ ] **Text** — warte auf Person, seit YYYY-MM-DD` direkt in `## Warte auf`.
+## Irgendwann
+- [ ] Spaeter
 
-**Backward-Kompatibel:** Dateien ohne Section-Struktur werden im flachen Format unterstuetzt (Aufgaben werden ans Ende angehaengt).
+## Erledigt
+- [x] Done ✅ 2026-04-14
+```
 
-**Auflisten:** Scannt alle .md-Dateien im Vault (oder Ordner) nach offenen Checkboxen. Sortiert nach Faelligkeitsdatum. Filter: faellig (heute/ueberfaellig/woche), prioritaet, ordner.
+## Recurring-Verhalten
 
-## Rueckgabe
+Wenn eine Task mit 🔁 erledigt wird:
+1. Die Task wird mit Status `[x]` + `✅ <heute>` in **## Erledigt** verschoben
+2. Eine neue Instanz mit dem naechsten Datum wird in **## Aktiv** erstellt
+3. Alle Felder (prio, tags, kontext, recurrence, estimate, plan_ref) werden uebernommen
 
-**modus=erfassen — Erfolg:** `[task] Aufgabe erfasst: Aufgaben.md — "Prototyp bauen", hoch, faellig 2026-04-20`
-**modus=erfassen — Fehler:** `Fehler: Kein Aufgabentext angegeben`
-**modus=erfassen — Fehler:** `Fehler: Datum muss YYYY-MM-DD sein, bekommen: "2026/04/20"`
+## Rueckgaben
 
-**modus=auflisten — Erfolg:** `5 offene Aufgaben:\n- [ ] Prototyp bauen ... — Aufgaben.md:3\n...`
-**modus=auflisten — Gefiltert:** `2 offene Aufgaben (ueberfaellig):\n...`
-**modus=auflisten — Leer:** `Keine offenen Aufgaben.`
-
-**modus=erledigen — Erfolg:** `[task] Aufgabe erledigt: Aufgaben.md — "~~Prototyp bauen~~"`
-**modus=erledigen — Nicht gefunden:** `Fehler: Aufgabe mit 'xyz' nicht gefunden`
-**modus=erledigen — Fehler:** `Fehler: Kein Suchtext angegeben`
-
-**modus=verschieben — Erfolg:** `[task] Aufgabe verschoben: nach irgendwann — Prototyp bauen`
-**modus=verschieben — Nicht gefunden:** `Fehler: Aufgabe mit 'xyz' nicht gefunden`
-**modus=verschieben — Fehler:** `Fehler: Ungueltiges Ziel: "xyz". Erlaubt: aktiv, warte_auf, irgendwann`
-
-**modus=warte_auf — Erfolg:** `[task] Warte-Aufgabe erfasst: Aufgaben.md — "Review" — Max`
-**modus=warte_auf — Fehler:** `Fehler: Keine Person angegeben (person ist Pflicht bei modus=warte_auf)`
+**Erfolg erfassen:** `✅ Aufgabe erfasst: Aufgaben.md — "Max anrufen", mittel-hoch, faellig 2026-04-20, #work, @telefon`
+**Erfolg erledigen (recurring):** `✅ Aufgabe erledigt: Aufgaben.md — "Weekly Review" — Wiederholung: naechste Instanz erstellt`
+**Mehrdeutig:** `Mehrere Aufgaben passen zu "X" (3 Treffer). Bitte praeziser: ...`
+**Fehler (Validation):** `Fehler: Kein Aufgabentext angegeben.`
+**Nicht gefunden:** `Aufgabe mit "X" nicht gefunden.`
 
 ## Abhaengigkeiten
 
-- `node:fs`, `node:path`
-- `_lib/vault.ts` (`vaultPath`, `safePath`, `ensureDir`, `projectPath`, `walkMarkdownFiles`, `atomicWriteSync`)
-- `_lib/config.ts` (`DEFAULT_TASK_FILE`)
-- `_lib/format.ts` (`ok`, `err`, `list`)
-- `_lib/types.ts`
+- `_lib/vault.ts`, `_lib/config.ts`, `_lib/format.ts`, `_lib/date.ts`
+- `_lib/task-model.ts` → Task-Interface, Emojis
+- `_lib/task-parser.ts` → Markdown → Task
+- `_lib/task-format.ts` → Task → Markdown
+- `_lib/natural-language.ts` → NLP-Parser
+- `_lib/recurrence.ts` → Recurrence-Berechnung
 
 ## Beispiele
 
+### Natural-Language-Erfassung
 ```json
-{ "modus": "erfassen", "text": "Prototyp bauen", "datum": "2026-04-20", "prioritaet": "hoch" }
-{ "modus": "erfassen", "text": "Doku schreiben", "projekt": "WebApp" }
-{ "modus": "auflisten" }
-{ "modus": "auflisten", "faellig": "ueberfaellig", "prioritaet": "hoch" }
-{ "modus": "auflisten", "ordner": "Projekte/WebApp" }
-{ "modus": "erledigen", "text": "Prototyp" }
-{ "modus": "erledigen", "text": "Prototyp", "datei": "Projekte/WebApp/Aufgaben.md" }
-{ "modus": "verschieben", "text": "Doku schreiben", "nach": "irgendwann" }
-{ "modus": "verschieben", "text": "Review", "nach": "aktiv" }
-{ "modus": "warte_auf", "text": "Code Review", "person": "Max", "projekt": "WebApp" }
+{ "modus": "erfassen", "text": "morgen 15 Uhr Max anrufen #work @telefon jeden Montag !!" }
+```
+
+### Praezise strukturiert
+```json
+{
+  "modus": "erfassen",
+  "text": "Prototyp bauen",
+  "datum": "2026-04-25",
+  "start": "2026-04-20",
+  "prioritaet": "hoch",
+  "tags": "refactor,prio",
+  "schaetzung": "4h",
+  "plan_ref": "plan-xyz#2"
+}
+```
+
+### Subtask
+```json
+{ "modus": "erfassen", "text": "Auth-Modul", "parent_text": "Prototyp" }
+```
+
+### Dashboard
+```json
+{ "modus": "auflisten", "ansicht": "dashboard" }
+```
+
+### Filter nach Kontext
+```json
+{ "modus": "auflisten", "kontext_filter": "@laptop" }
+```
+
+### Bearbeiten
+```json
+{ "modus": "bearbeiten", "text": "Prototyp", "prioritaet": "hoch", "tag_action": "add", "tags": "urgent" }
+```
+
+### Details hinzufuegen
+```json
+{ "modus": "details", "text": "Prototyp", "details": "Auth-Modul zuerst\nAPI danach" }
+```
+
+### Bulk-Erledigen
+```json
+{ "modus": "bulk", "bulk_aktion": "erledigen", "tag": "done-candidates", "bestaetigung": "true" }
 ```

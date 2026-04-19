@@ -19,6 +19,8 @@ import { schema as exportSchema } from "./export/schema.js";
 import { handler as exportHandler } from "./export/handler.js";
 import { schema as projektSchema } from "./projekt/schema.js";
 import { handler as projektHandler } from "./projekt/handler.js";
+import { schema as planSchema } from "./plan/schema.js";
+import { handler as planHandler } from "./plan/handler.js";
 
 import type { ToolSchema, ToolHandler, ToolArgs } from "./_lib/types.js";
 
@@ -31,6 +33,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   memorySchema,
   exportSchema,
   projektSchema,
+  planSchema,
 ];
 
 /** Handler-Map: Tool-Name → Handler-Funktion */
@@ -42,6 +45,7 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = {
   memory: memoryHandler,
   export: exportHandler,
   projekt: projektHandler,
+  plan: planHandler,
 };
 
 // Re-exports fuer externe Nutzung

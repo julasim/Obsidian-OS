@@ -109,3 +109,26 @@ export function wikilink(absPathOrName: string): string {
   const name = base.replace(/\.md$/i, "");
   return `[[${name}]]`;
 }
+
+/**
+ * Wrapper fuer Tool-Handler: faengt alle ungewollten Exceptions ab und
+ * gibt stattdessen einen Fehler-String zurueck. Garantiert die
+ * "keine throws"-Policy (STYLE.md §5, INTEGRATION.md).
+ *
+ * Nutzung in jedem Tool:
+ *   export const handler: ToolHandler = safeHandler(async (args) => { ... });
+ */
+import type { ToolHandler, ToolArgs } from "./types.js";
+
+export function safeHandler(
+  inner: (args: ToolArgs) => Promise<string>,
+): ToolHandler {
+  return async (args) => {
+    try {
+      return await inner(args);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return `Fehler: Interner Fehler — ${msg}.`;
+    }
+  };
+}

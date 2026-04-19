@@ -80,6 +80,11 @@ export const KNOWLEDGE_FILE: string =
 export const KNOWLEDGE_DIR: string =
   process.env.KNOWLEDGE_DIR ?? "knowledge";
 
+// ---- Plaene (Multi-Step-Tasks) ----
+
+/** Ordner fuer Plaene. Default: Plaene */
+export const PLANS_DIR: string = process.env.PLANS_DIR ?? "Plaene";
+
 /** Verzeichnisse, die beim Vault-Walk ignoriert werden */
 export const SKIP_DIRS: Set<string> = new Set([
   ".obsidian",

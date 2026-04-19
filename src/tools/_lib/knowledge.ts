@@ -152,6 +152,22 @@ export function readProject(name: string): string | null {
   return fs.readFileSync(fp, "utf-8");
 }
 
+/**
+ * Liest das Emoji eines Projekts (falls im Frontmatter oder als **Emoji:** Feld gesetzt).
+ * Gibt leeren String zurueck wenn kein Emoji gefunden.
+ * Nuetzlich fuer Dashboards die Projekte mit Emoji anzeigen wollen.
+ */
+export function readProjectEmoji(name: string): string {
+  const content = readProject(name);
+  if (!content) return "";
+  // Suche nach: frontmatter "emoji: X" oder Zeile "**Emoji:** X"
+  const fmMatch = content.match(/^emoji:\s*(\S+)/im);
+  if (fmMatch) return fmMatch[1];
+  const fieldMatch = content.match(/^\*\*Emoji:\*\*\s*(\S+)/im);
+  if (fieldMatch) return fieldMatch[1];
+  return "";
+}
+
 /** Liest eine Kontext-Datei. Gibt null wenn nicht existent. */
 export function readContext(topic: string): string | null {
   const slug = slugify(topic);

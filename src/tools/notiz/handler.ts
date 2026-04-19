@@ -16,7 +16,7 @@ import {
   LOCALE,
   TIMEZONE,
 } from "../_lib/config.js";
-import { ok, err, wikilink } from "../_lib/format.js";
+import { ok, err, wikilink, safeHandler } from "../_lib/format.js";
 import { dailyNotePath, createDailyNote, formatDate } from "../_lib/daily.js";
 import type { ToolHandler } from "../_lib/types.js";
 
@@ -41,37 +41,6 @@ function yamlValue(val: string): string {
   return val;
 }
 
-/**
- * Saubert einen Titel-Input: LLMs pasten gelegentlich [[Wikilinks]] oder
- * "-quoted Strings" als Titel-Parameter, was dann als Frontmatter-Wert
- * doppelt escaped wird (Bsp: [["X"]] landet als [["\"X\""]]).
- */
-function normalizeTitle(raw: string): string {
-  let t = raw.trim();
-  // [[...]] abstreifen
-  if (t.startsWith("[[") && t.endsWith("]]")) t = t.slice(2, -2);
-  // aeussere Quotes abstreifen
-  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
-    t = t.slice(1, -1);
-  }
-  return t.trim();
-}
-
-/**
- * Entfernt ein fuehrendes YAML-Frontmatter aus einem Text-Block, falls vorhanden.
- * LLMs neigen dazu, den Roh-Inhalt einer bestehenden Notiz (inkl. Frontmatter)
- * als `text`-Parameter von notiz(speichern) zu uebergeben — dann landet das alte
- * Frontmatter als Literal im Body der neuen Datei. saveNote() baut sein eigenes
- * frontmatter obenauf; altes muss vorher weg.
- */
-function stripLeadingFrontmatter(content: string): string {
-  if (!content.startsWith("---")) return content;
-  // Muss direkt in Zeile 1 anfangen und mit \n--- beendet werden
-  const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
-  if (!match) return content;
-  return content.slice(match[0].length).replace(/^\r?\n+/, "");
-}
-
 interface SaveNoteOptions {
   project?: string;
   title?: string;
@@ -94,12 +63,7 @@ function saveNote(content: string, opts: SaveNoteOptions = {}): string | null {
 
   ensureDir(folder);
 
-  // Titel saubern (Wikilinks/Quotes entfernen) bevor er fuer Filename + YAML
-  // verwendet wird. LLMs pasten sonst [["X"]] als Titel und das landet doppelt
-  // escaped im Frontmatter.
-  const cleanTitle = opts.title ? normalizeTitle(opts.title) : undefined;
-
-  const baseName = cleanTitle ? titleToFilename(cleanTitle) : timestampFilename();
+  const baseName = opts.title ? titleToFilename(opts.title) : timestampFilename();
   let filename = baseName + ".md";
 
   if (fs.existsSync(path.join(folder, filename))) {
@@ -119,17 +83,13 @@ function saveNote(content: string, opts: SaveNoteOptions = {}): string | null {
     minute: "2-digit",
   });
 
-  // Existierendes Frontmatter aus dem content abtrennen, sonst landet es als
-  // Literal-Text im Body der neuen Datei (und Obsidian zeigt's doppelt).
-  const body = stripLeadingFrontmatter(content);
-
   const source = opts.quelle ?? "extern";
   let fm = `---\ncreated: ${date} ${time}\nsource: ${yamlValue(source)}\n`;
-  if (cleanTitle) fm += `title: ${yamlValue(cleanTitle)}\n`;
+  if (opts.title) fm += `title: ${yamlValue(opts.title)}\n`;
   if (opts.tags && opts.tags.length > 0) fm += `tags: [${opts.tags.join(", ")}]\n`;
   fm += `---\n\n`;
 
-  atomicWriteSync(filepath, fm + body + "\n");
+  atomicWriteSync(filepath, fm + content + "\n");
   return filepath;
 }
 
@@ -551,7 +511,7 @@ async function handleEintrag(
 // Dispatcher
 // ============================================================
 
-export const handler: ToolHandler = async (args) => {
+export const handler: ToolHandler = safeHandler(async (args) => {
   const modus = String(args.modus ?? "");
 
   switch (modus) {
@@ -570,4 +530,4 @@ export const handler: ToolHandler = async (args) => {
         `Unbekannter Modus: "${modus}". Erlaubt: speichern, bearbeiten, loeschen, frontmatter, eintrag`,
       );
   }
-};
+});
