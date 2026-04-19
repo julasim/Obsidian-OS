@@ -40,11 +40,15 @@ export const WHISPER_MODEL = process.env.WHISPER_MODEL || "large-v3";
 export const WHISPER_LANG = process.env.WHISPER_LANG || "de";
 
 // ── Agent ────────────────────────────────────────────────────────────────────
-// Mehrstufige Operationen wie "Notiz verschieben + Projekt umbenennen" brauchen
-// schnell 10+ Tool-Rounds (suchen → Zielordner pruefen → lesen → speichern →
-// alten Eintrag loeschen → Projekt umbenennen → verifizieren → antworten).
-// 15 als Default gibt Puffer; via Env tunebar fuer spezielle Faelle.
-export const MAX_TOOL_ROUNDS = Number(process.env.MAX_TOOL_ROUNDS ?? 15);
+// Zweistufiges Budget:
+// - SOFT: ab dieser Runde bekommt das LLM eine "bitte langsam wrappen"-Message
+//   eingeschoben, um Fokus zu schaerfen. Normale Tool-Calls laufen weiter.
+// - HARD: echte Obergrenze. In der letzten Runde wird tool_choice auf antworten
+//   gezwungen, damit der User nie im generischen Fallback landet.
+// Real-World: viele-Tasks-abarbeiten + lesen + zusammenfassen kann 20+ Runden
+// brauchen — hart 15 war zu knapp. Hard-Cap 80 schuetzt vor Runaway-Loops.
+export const MAX_TOOL_ROUNDS = Number(process.env.MAX_TOOL_ROUNDS ?? 80);
+export const SOFT_TOOL_ROUNDS = Number(process.env.SOFT_TOOL_ROUNDS ?? 25);
 
 // ── Ged\u00e4chtnis ────────────────────────────────────────────────────────────────
 export const MAX_HISTORY_CHARS = 60_000;

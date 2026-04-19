@@ -8,6 +8,7 @@ import {
   DEFAULT_MODEL,
   MAX_HISTORY_CHARS,
   MAX_TOOL_ROUNDS,
+  SOFT_TOOL_ROUNDS,
   MESSAGE_PREVIEW_LENGTH,
   KEPT_TOOL_MESSAGES,
   HISTORY_LOAD_LIMIT,
@@ -73,13 +74,18 @@ export async function processAgent(agentName: string, userMessage: string): Prom
   // Loop-Detection: wenn dreimal hintereinander identischer Tool-Call → abbrechen.
   // Verhindert dass das Modell bei einer Nicht-gefunden-Antwort endlos retry't.
   const recentCallSignatures: string[] = [];
+  let softHintSent = false;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    // Auf der vorletzten Runde Force-antworten: das Modell MUSS wrapen.
-    // Dadurch landen wir nie im "Tool-Runden erschoepft"-Fallback wenn das
-    // Modell an sich noch ansprechbar ist — im schlimmsten Fall gibt es
-    // eine "keine Ergebnisse" oder "nicht gefunden" Antwort.
+    // Zwei Schwellen:
+    // - Soft-Cap (Default 25): einmalig "bitte wrappen"-Hinweis einschieben.
+    //   LLM darf weiter Tools callen — wir haben echte Multi-Step-Ops gesehen
+    //   die 20+ Runden brauchen (viele Notizen lesen + zusammenfassen).
+    // - Hard-Cap (Default 80): tool_choice wird auf antworten gezwungen, um
+    //   nicht im generischen Fallback zu landen.
     const isLastChance = round === MAX_TOOL_ROUNDS - 1;
+    const isSoftLimit = round >= SOFT_TOOL_ROUNDS && !softHintSent;
+
     const toolChoice: "required" | { type: "function"; function: { name: string } } = isLastChance
       ? { type: "function", function: { name: "antworten" } }
       : "required";
@@ -91,6 +97,16 @@ export async function processAgent(agentName: string, userMessage: string): Prom
           "Letzte Runde — keine weiteren Tool-Calls moeglich. Bitte JETZT via antworten(text=...) " +
           "das zusammenfassen was du bis jetzt herausgefunden hast, oder ehrlich sagen dass keine " +
           "Daten gefunden wurden.",
+      });
+    } else if (isSoftLimit) {
+      softHintSent = true;
+      logInfo(`[${agentName}] Soft-Cap erreicht (Runde ${round + 1}/${MAX_TOOL_ROUNDS}) — hint eingeschoben`);
+      messages.push({
+        role: "user",
+        content:
+          `Hinweis: du hast bereits ${round} Tool-Runden verbraucht. Bitte fokussieren — ` +
+          `noch ${MAX_TOOL_ROUNDS - round} Runden verfuegbar bevor hart abgebrochen wird. ` +
+          `Wenn du genug Info hast, JETZT antworten(text=...). Sonst die naechsten Schritte straff halten.`,
       });
     }
 
