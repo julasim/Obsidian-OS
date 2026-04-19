@@ -98,6 +98,42 @@ function sanitizeLogForPrompt(raw: string, agentName: string): string {
     .replace(/\*\*User:\*\* /g, "Frage: ");
 }
 
+/**
+ * log.md ist eine Pipe-Tabelle die monoton waechst. Nur den Tabellen-Header +
+ * die letzten N Zeilen in den Prompt geben, sonst sprengt das irgendwann den
+ * Context-Rahmen. Kompletter File-Read ist fuer den LLM nur via vault(lesen)
+ * noetig wenn er die gesamte History braucht.
+ */
+function truncateTableFile(raw: string, maxDataRows = 30): string {
+  const lines = raw.split("\n");
+  // Frontmatter + Header + Separator finden
+  let headerIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*\|.*\|\s*$/.test(lines[i])) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return raw; // Keine Tabelle erkannt — Rohtext
+
+  // Kopfzeilen (alles bis einschliesslich Separator)
+  const separatorIdx = headerIdx + 1;
+  const head = lines.slice(0, separatorIdx + 1);
+  // Datenzeilen nur die letzten N
+  const dataLines = lines.slice(separatorIdx + 1).filter((l) => /^\s*\|.*\|\s*$/.test(l));
+  const tail = lines.slice(separatorIdx + 1).filter((l) => !/^\s*\|.*\|\s*$/.test(l));
+
+  const truncatedData =
+    dataLines.length > maxDataRows
+      ? [
+          `| ... | ... ${dataLines.length - maxDataRows} aeltere Eintraege ausgeblendet ... | ... |`,
+          ...dataLines.slice(-maxDataRows),
+        ]
+      : dataLines;
+
+  return [...head, ...truncatedData, ...tail].join("\n");
+}
+
 export function loadAgentWorkspace(agentName: string): string {
   const agentDir = getAgentPath(agentName);
   let context = "";
@@ -109,18 +145,45 @@ export function loadAgentWorkspace(agentName: string): string {
     if (!raw) return;
     const processed = transform ? transform(raw) : raw;
     const content = truncateFile(processed, label);
-    const block = `\n\n---\n${content}`;
+    // Block mit Label damit das LLM die Files auseinanderhalten kann.
+    // Format "--- NAME ---" ist bewusst anders als Markdown-Frontmatter (`---\n`)
+    // damit es nicht als YAML interpretiert wird.
+    const block = `\n\n=== ${label} ===\n${content}`;
     if (totalChars + block.length > MAX_TOTAL_CHARS) return;
     context += block;
     totalChars += block.length;
   }
 
-  addFile(path.join(agentDir, "SYSTEM.md"), "SYSTEM.md");
-  addFile(path.join(agentDir, "MEMORY.md"), "MEMORY.md");
+  // ── Vault-Steuer-Files (dynamisch aus dem User-Vault) ────────────────
+  // Reihenfolge wichtig: Routing-Regeln zuerst, dann Katalog, dann History.
+  // Das LLM muss CLAUDE.md verstanden haben bevor es Notizen platziert.
+  // Pfade sind hardcoded (WORKSPACE_PATH + fixer Name), Inhalt wird bei
+  // jedem Turn neu vom Dateisystem gelesen — Aenderungen durch den User
+  // (z.B. in Obsidian) sind beim naechsten Bot-Antwort sofort wirksam,
+  // ohne Rebuild/Restart.
+  if (workspacePath) {
+    addFile(
+      path.join(workspacePath, "CLAUDE.md"),
+      "VAULT/CLAUDE.md (Routing-Regeln - STRIKT BEFOLGEN)",
+    );
+    addFile(
+      path.join(workspacePath, "index.md"),
+      "VAULT/index.md (Wiki-Katalog)",
+    );
+    addFile(
+      path.join(workspacePath, "log.md"),
+      "VAULT/log.md (Ingest-History - letzte 30 Eintraege)",
+      (raw) => truncateTableFile(raw, 30),
+    );
+  }
+
+  // ── Bot-interner State ───────────────────────────────────────────────
+  addFile(path.join(agentDir, "SYSTEM.md"), "BOT/SYSTEM.md");
+  addFile(path.join(agentDir, "MEMORY.md"), "BOT/MEMORY.md");
   const today = new Date().toISOString().slice(0, 10);
   addFile(
     path.join(agentDir, WORKSPACE_LOGS_DIR, `${today}.md`),
-    "Tageslog",
+    "BOT/Tageslog",
     (raw) => sanitizeLogForPrompt(raw, agentName),
   );
 
