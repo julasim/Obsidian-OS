@@ -77,9 +77,15 @@ export async function processAgent(agentName: string, userMessage: string): Prom
   let enforcementRetries = 0;
   const MAX_ENFORCEMENT_RETRIES = 2;
 
-  // Loop-Detection: wenn dreimal hintereinander identischer Tool-Call → abbrechen.
-  // Verhindert dass das Modell bei einer Nicht-gefunden-Antwort endlos retry't.
-  const recentCallSignatures: string[] = [];
+  // Loop-Detection + Ban-List:
+  // - Zaehlt wie oft eine Signatur (Tool+Args) gecalled wurde (pro Turn).
+  // - Bei >=2 identischen Calls hintereinander: Ban — weitere Calls mit
+  //   derselben Signatur werden nicht mehr ausgefuehrt, stattdessen gibt es
+  //   ein synthetisches Error-Result, das dem LLM klar macht: "probier was
+  //   anderes". Vorher wurde der Loop nur gewarnt, LLM ignorierte die
+  //   Warnung und callte 60+ mal dasselbe.
+  const callCounts = new Map<string, number>();
+  const bannedSignatures = new Set<string>();
   let softHintSent = false;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -170,16 +176,13 @@ export async function processAgent(agentName: string, userMessage: string): Prom
         tc.type === "function",
     );
 
-    // antworten-Call raussuchen — der liefert den finalen User-Text
+    // antworten-Call raussuchen — der liefert den finalen User-Text.
+    // plan() laeuft jetzt ueber den normalen Executor (file-basiert) und ist
+    // von der Loop-Detection ausgenommen (mehrere plan(zeigen) sind legit
+    // Re-Orientierung, kein Stuck-Loop).
     const antwortenCall = functionCalls.find((tc) => tc.function.name === "antworten");
-    // plan() laeuft jetzt ueber den normalen Executor (file-basiert), wird
-    // aber von der Loop-Detection ausgenommen — mehrere plan(zeigen)-Calls
-    // sind legit Re-Orientierung, kein Stuck-Loop.
     const sideEffectCalls = functionCalls.filter(
       (tc) => tc.function.name !== "antworten",
-    );
-    const loopRelevantCalls = sideEffectCalls.filter(
-      (tc) => tc.function.name !== "plan",
     );
 
     const toolSummary = functionCalls
@@ -191,37 +194,33 @@ export async function processAgent(agentName: string, userMessage: string): Prom
       .join(", ");
     logInfo(`[${agentName}] Tools (Runde ${round + 1}): ${toolSummary}`);
 
-    // Loop-Detection: Signatur der loop-relevanten Calls (plan + antworten ausgenommen)
-    const sigCalls = loopRelevantCalls.map((tc) => `${tc.function.name}(${tc.function.arguments})`);
-    if (sigCalls.length > 0) {
-      const sig = sigCalls.join("|");
-      recentCallSignatures.push(sig);
-      if (recentCallSignatures.length > 3) recentCallSignatures.shift();
-      if (
-        recentCallSignatures.length === 3 &&
-        recentCallSignatures[0] === recentCallSignatures[1] &&
-        recentCallSignatures[1] === recentCallSignatures[2]
-      ) {
-        logInfo(`[${agentName}] Loop erkannt — identischer Tool-Call 3x: ${sig.slice(0, 120)}`);
-        // Inject eine deutliche Stop-Message und zwinge antworten() in der naechsten Runde
-        messages.push({
-          role: "user",
-          content:
-            "LOOP: Du hast denselben Tool-Call 3x hintereinander gemacht und bekommst jedesmal dasselbe Ergebnis. " +
-            "Ruf JETZT antworten(text=...) auf mit dem was du weisst oder sag dass du es nicht findest. " +
-            "Probier keine Variation mehr.",
-        });
-        // Force antworten im naechsten Loop-Durchlauf durch Setzen der Bedingung
-        // (wir haben schon alle side-effects ausgefuehrt; toolResults sind unten gepusht)
-        recentCallSignatures.length = 0; // reset, sonst triggert es dauernd
-      }
-    }
-
     // Seiten-Effekt-Tools (Schreiben/Suchen/...) IMMER zuerst — damit antworten
     // nie eine "Erledigt"-Bestaetigung sendet bevor der Write wirklich durch ist.
     // plan() laeuft ueber den normalen Executor (file-basierter State).
+    // Loop-Schutz: pro Signatur (name+args) wird nach >=2 identischen Calls
+    // fuer den Rest des Turns geblockt.
     const toolResults: ChatMessage[] = await Promise.all(
       sideEffectCalls.map(async (tc) => {
+        const sig = `${tc.function.name}(${tc.function.arguments})`;
+        const loopRelevant = tc.function.name !== "plan";
+
+        // Ban-Check: wenn diese Signatur in diesem Turn schon >=2x aufgetreten ist
+        if (loopRelevant && bannedSignatures.has(sig)) {
+          logInfo(`[${agentName}] Blocked (gebannt in Turn): ${sig.slice(0, 120)}`);
+          return {
+            role: "tool" as const,
+            tool_call_id: tc.id,
+            content:
+              `BLOCKED: Du hast ${tc.function.name}(...) mit exakt diesen Argumenten in diesem Turn ` +
+              `bereits mehrfach gecalled und bekommst immer dasselbe Ergebnis zurueck. Weitere Calls mit ` +
+              `identischen Argumenten werden abgelehnt. ` +
+              `\n\nOptionen: ` +
+              `(a) Andere Argumente probieren (andere modus, andere Filter, anderer Name). ` +
+              `(b) Ein anderes Tool nutzen (vault, notiz, plan, memory, ...). ` +
+              `(c) Mit antworten(text=...) dem User ehrlich sagen was du gefunden hast oder nicht gefunden hast.`,
+          };
+        }
+
         let args: Record<string, unknown> = {};
         try {
           args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
@@ -232,7 +231,24 @@ export async function processAgent(agentName: string, userMessage: string): Prom
             content: `Fehler: Ungueltige Tool-Argumente fuer ${tc.function.name}.`,
           };
         }
+
         const result = await executeTool(tc.function.name, args);
+
+        // Loop-Tracking: Count hochzaehlen, Ban bei >=2 Calls
+        if (loopRelevant) {
+          const count = (callCounts.get(sig) ?? 0) + 1;
+          callCounts.set(sig, count);
+          if (count >= 2) {
+            bannedSignatures.add(sig);
+            logInfo(`[${agentName}] Loop-Ban (Runde ${round + 1}, ${count}x): ${sig.slice(0, 120)}`);
+          }
+        }
+
+        // Tool-Result-Preview in den Log schreiben — bisher komplett unsichtbar,
+        // was das Debuggen von "LLM callt dasselbe Tool 60x"-Mustern unmoeglich machte.
+        const resultPreview = result.slice(0, 200).replace(/\s+/g, " ").trim();
+        logInfo(`[${agentName}] Result ${tc.function.name}: ${resultPreview}${result.length > 200 ? " ..." : ""}`);
+
         return { role: "tool" as const, tool_call_id: tc.id, content: result };
       }),
     );
