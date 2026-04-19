@@ -29,19 +29,28 @@ const ANTWORTEN_TOOL: ChatTool = {
       "dieses Tool gehen. Fuer Datenfragen ZUERST vault/notiz/aufgaben/... callen, " +
       "dann mit den echten Daten antworten. NIEMALS Inhalte erfinden — wenn keine " +
       "Daten vorliegen, das ehrlich sagen.\n\n" +
-      "WICHTIG — Laenge: der Text geht an Telegram, maximal 3800 Zeichen sinnvoll " +
-      "(laengere Nachrichten werden automatisch gesplittet). FASSE ZUSAMMEN, kopiere " +
-      "KEINE Rohdaten (ganze Wiki-Artikel, lange Tabellen, komplette Notiz-Inhalte) " +
-      "als Antwort. Bei 'lies mir Notiz X' → 3-5 Satz-Zusammenfassung + Hinweis auf " +
-      "Dateiname, nicht den gesamten Inhalt. Knapp, praezise, auf Deutsch.",
+      "REGELN fuer den text-Parameter:\n\n" +
+      "1. LISTEN (aufgaben(auflisten), termine(auflisten), vault(suchen) mit mehreren " +
+      "Treffern, plan(zeigen)): das Tool liefert bereits formatierte Zeilen inkl. " +
+      "Emojis, Daten, Prioritaeten, Dateireferenzen. NIMM DIESE 1:1 UEBER. Keine " +
+      "Felder weglassen, nicht umsortieren, nicht neu formatieren. Lass nur den " +
+      "Header-Zaehler stehen und das Listen-Format exakt wie es kam.\n\n" +
+      "2. LANGE INHALTE (Wiki-Artikel, komplette Notizen, grosse Tabellen): NICHT " +
+      "als Rohtext kopieren. 3-5 Satz-Zusammenfassung + Dateiname reicht. Der User " +
+      "kann die Datei in Obsidian selbst oeffnen.\n\n" +
+      "3. BESTAETIGUNGEN (Notiz gespeichert, Aufgabe erledigt, Projekt umbenannt): " +
+      "kurz quittieren mit dem was das Tool zurueckgab.\n\n" +
+      "4. Maximal 3800 Zeichen (Telegram-Limit) — laengere Nachrichten werden " +
+      "automatisch gesplittet, aber zielen auf <1000 Zeichen fuer normale Antworten.",
     parameters: {
       type: "object",
       properties: {
         text: {
           type: "string",
           description:
-            "Die Antwort an den Benutzer (Markdown erlaubt). Auf Deutsch, praezise. " +
-            "Richtwert: unter 1000 Zeichen. Nur in absoluten Ausnahmefaellen laenger.",
+            "Die Antwort an den Benutzer auf Deutsch. Bei Listen: 1:1 wie vom Tool " +
+            "geliefert. Bei Zusammenfassungen: praezise, knapp. Richtwert <1000 " +
+            "Zeichen, ausser bei Listen die laenger sein muessen.",
         },
       },
       required: ["text"],
